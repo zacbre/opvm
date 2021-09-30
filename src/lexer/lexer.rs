@@ -2,8 +2,8 @@ use nom::branch::alt;
 use nom::IResult;
 use nom::bytes::complete::*;
 use nom::multi::{separated_list0};
-use nom::sequence::{delimited, preceded};
-use nom::combinator::{eof, peek};
+use nom::sequence::{delimited, preceded, terminated};
+use nom::combinator::{eof, opt, peek};
 use crate::lexer::token::{Token, TokenType};
 use crate::vm::instruction::Instruction;
 use crate::vm::program::Program;
@@ -19,7 +19,6 @@ impl Lexer {
 
     pub fn process(&self, input: String) -> Option<Program> {
         let matched = handle_lines(input.as_str());
-        //println!("{:?}", matched);
         match matched {
             Ok((_, v)) => {
                 return Some(self.build(v));
@@ -73,6 +72,10 @@ impl Lexer {
     }
 }
 
+fn match_newline(i: &str) -> IResult<&str,&str> {
+    take_till(|c| c == '\n' || c == ';')(i)
+}
+
 fn match_whitespace(i: &str) -> IResult<&str,&str> {
     take_till(|c| c != ' ' && c != '\t')(i)
 }
@@ -86,19 +89,19 @@ fn match_blank_line(i: &str) -> IResult<&str, Token> {
 }
 
 fn match_comments(i: &str) -> IResult<&str, Token> {
-    build_token(preceded(match_whitespace, preceded(alt((tag("# "), tag("#"))), is_not("\n")))(i), TokenType::Comment)
+    build_token(preceded(opt(match_whitespace), preceded(alt((tag("; "), tag(";"))), take_till(|c| c == '\n')))(i), TokenType::Comment)
 }
 
 fn match_directive(i: &str) -> IResult<&str, Token> {
-    build_token(preceded(match_whitespace, preceded(tag("."), take_till(|c| c == '\n')))(i), TokenType::Directive)
+    build_token(terminated(preceded(match_whitespace, preceded(tag("#"), match_newline)), opt(match_comments))(i), TokenType::Directive)
 }
 
 fn match_label(i: &str) -> IResult<&str, Token> {
-    build_token(preceded(match_whitespace, preceded(tag("@"), take_till(|c| c == '\n')))(i), TokenType::Label)
+    build_token(terminated(preceded(match_whitespace, preceded(tag("."), match_newline)), opt(match_comments))(i), TokenType::Label)
 }
 
 fn match_opcode(i: &str) -> IResult<&str, Token> {
-    build_token(take_till(|c| c == '\n')(i), TokenType::Instruction)
+    build_token(terminated(match_newline, opt(match_comments))(i), TokenType::Instruction)
 }
 
 fn handle_lines(i: &str) -> IResult<&str, Vec<Token>> {
@@ -149,9 +152,9 @@ mod test {
     #[test]
     fn can_parse_directives() {
         let assm = r#"
-        .data
-            @label 1
-        .code
+        #data
+            .label 1
+        #code
         "#;
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
@@ -163,10 +166,10 @@ mod test {
     #[test]
     fn can_parse_labels() {
         let assm = r#"
-        .data
-            @label 1
-        .code
-            @main
+        #data
+            .label 1
+        #code
+            .main
             push @label
             print
         "#;
@@ -180,7 +183,7 @@ mod test {
     #[test]
     fn can_ignore_comments() {
         let assm = r#"
-        # this is a test comment!
+        ; this is a test comment!
         "#;
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
@@ -197,5 +200,28 @@ mod test {
         assert!(instructions.is_some());
         let unwrapped = instructions.unwrap();
         assert_eq!(unwrapped.instructions.len(), 0);
+    }
+
+    #[test]
+    fn can_have_comments_on_lines() {
+        let assm = r#"
+            #data; my comment
+                .hi "ayy";comment
+                .xdd 2 ; comment
+            #code        ; comment
+                .main ;comment
+                    push 1; comment
+                    pop; comment
+                    push 2;comment
+                    pop;        comment
+        "#;
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        assert_eq!(unwrapped.instructions.len(), 4);
+        assert_eq!(unwrapped.labels.len(), 1);
+        assert_eq!(*unwrapped.data.get("@hi").unwrap(), Field::from("ayy"));
+        assert_eq!(*unwrapped.data.get("@xdd").unwrap(), Field::from(2));
+        assert_eq!(*unwrapped.labels.get("@main").unwrap(), 0);
     }
 }

@@ -17,7 +17,14 @@ pub enum OpCode {
     Jge,
     Jl,
     Jg,
-    Unknown
+    Inc,
+    Dec,
+    Nop,
+    Hlt,
+    Dup,
+    Concat,
+    Igl,
+    Swap,
 }
 
 impl From<&str> for OpCode {
@@ -40,7 +47,46 @@ impl From<&str> for OpCode {
             "jge" => OpCode::Jge,
             "jl" => OpCode::Jl,
             "jg" => OpCode::Jg,
-            _ => OpCode::Unknown
+            "inc" => OpCode::Inc,
+            "dec" => OpCode::Dec,
+            "nop" => OpCode::Nop,
+            "hlt" => OpCode::Hlt,
+            "dup" => OpCode::Dup,
+            "concat" => OpCode::Concat,
+            "swap" => OpCode::Swap,
+            _ => OpCode::Igl
+        }
+    }
+}
+
+impl From<OpCode> for &str {
+    fn from(opcode: OpCode) -> Self {
+        match opcode {
+            OpCode::Push => "push",
+            OpCode::Pop => "pop",
+            OpCode::Add => "add",
+            OpCode::Mul => "mul",
+            OpCode::Sub => "sub",
+            OpCode::Div => "div",
+            OpCode::Mod => "mod",
+            OpCode::Print => "print",
+            OpCode::Call => "call",
+            OpCode::Ret => "ret",
+            OpCode::Jmp => "jmp",
+            OpCode::Je => "je",
+            OpCode::Jne => "jne",
+            OpCode::Jle => "jle",
+            OpCode::Jge => "jge",
+            OpCode::Jl => "jl",
+            OpCode::Jg => "jg",
+            OpCode::Inc => "inc",
+            OpCode::Dec => "dec",
+            OpCode::Nop => "nop",
+            OpCode::Hlt => "hlt",
+            OpCode::Dup => "dup",
+            OpCode::Igl => "igl",
+            OpCode::Concat => "concat",
+            OpCode::Swap => "swap"
         }
     }
 }

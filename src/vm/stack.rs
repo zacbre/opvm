@@ -18,7 +18,11 @@ impl<T> Stack<T> {
         self.0.push(value);
     }
 
-    pub fn pop(&mut self) -> T {
-        self.0.pop().expect("Unable to pop from empty stack")
+    pub fn pop(&mut self) -> Option<T> {
+        self.0.pop()
+    }
+
+    pub fn to_vec(&self) -> &Vec<T> {
+        &self.0
     }
 }

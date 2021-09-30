@@ -15,6 +15,7 @@ impl Instruction {
         for field in operand {
             stack.push(field);
         }
+
         Instruction {
             opcode,
             operand: stack
@@ -24,7 +25,7 @@ impl Instruction {
     pub fn new_from_words(str: Vec<&str>) -> Self {
         let pre_opcode = *str.get(0).unwrap();
         let opcode = OpCode::from(pre_opcode);
-        if opcode == OpCode::Unknown {
+        if opcode == OpCode::Igl {
             println!("Error: Unknown opcode: {:?}", str);
         }
         let mut stack: Stack<Field> = Stack::new();
@@ -50,5 +51,20 @@ impl Instruction {
         }
 
         Field::from(str)
+    }
+
+    pub fn assemble(&self) -> String {
+        let str: &str = self.opcode.into();
+
+        let mut final_string = String::default();
+        final_string.push_str(str);
+        let cloned_operands = self.operand.clone();
+        let operands = cloned_operands.to_vec();
+        for i in 0..operands.len() {
+            let item = &operands[i];
+            final_string.push_str(" ");
+            final_string.push_str(item.to_string().as_str());
+        }
+        final_string
     }
 }

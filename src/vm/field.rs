@@ -72,7 +72,9 @@ impl Display for Field {
         match self {
             &Field::I(i) => write!(f, "{}", i),
             &Field::U(u) => write!(f, "{}", u),
-            &Field::S(ref s) => write!(f, "{}", s),
+            &Field::S(ref s) => {
+                write!(f, "{}", s)
+            },
         }
     }
 }

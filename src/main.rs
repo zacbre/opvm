@@ -1,21 +1,36 @@
-use crate::vm::instruction::Instruction;
-use crate::vm::opcode::OpCode;
-use crate::vm::Vm;
-use crate::vm::field::Field;
-use crate::vm::builder::builder;
+use crate::lexer::lexer::Lexer;
+use crate::vm::vm::Vm;
 
 mod lexer;
 mod vm;
 
 fn main() {
-    let mut builder = builder::new();
-    builder.push(OpCode::Push, vec![Field::from(4)]);
-    builder.push(OpCode::Push, vec![Field::from(4)]);
-    builder.push(OpCode::Add, vec![]);
-    builder.push(OpCode::Print, vec![]);
+    let lexer = Lexer::new();
+    let val = lexer.process(r#"
+.data
+    @asuh "this tests storage in data"
+    @wot 4
+.code
+        push @wot
+        push 4
+        add
+        print
+        call @name
+        push "hi"
+        print
+        push @asuh
+        print
+        jmp @end
+    @name
+        push "my function!"
+        print
+        ret
+    @end
+        push "end of program"
+        print
+    "#.to_string());
 
-    let instructions = Instruction::from(builder);
-
-    let mut vm = Vm::new(instructions);
-    vm.execute();
+    //println!("{:?}", val);
+    let mut vm = Vm::new();
+    vm.execute(val.unwrap());
 }

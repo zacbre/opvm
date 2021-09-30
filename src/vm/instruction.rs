@@ -2,8 +2,8 @@ use crate::vm::opcode;
 use crate::vm::opcode::OpCode;
 use crate::vm::field::Field;
 use crate::vm::stack::Stack;
-use crate::vm::builder::builder;
 
+#[derive(Clone, Debug)]
 pub struct Instruction {
     pub opcode: opcode::OpCode,
     pub operand: Stack<Field>
@@ -20,10 +20,35 @@ impl Instruction {
             operand: stack
         }
     }
-}
 
-impl From<builder> for Vec<Instruction> {
-    fn from(builder: builder) -> Vec<Instruction> {
-        builder.instructions
+    pub fn new_from_words(str: Vec<&str>) -> Self {
+        let pre_opcode = *str.get(0).unwrap();
+        let opcode = OpCode::from(pre_opcode);
+        if opcode == OpCode::Unknown {
+            println!("Error: Unknown opcode: {:?}", str);
+        }
+        let mut stack: Stack<Field> = Stack::new();
+        for i in 1..str.len() {
+            stack.push(Instruction::construct_field(str[i]));
+        }
+
+        Instruction {
+            opcode,
+            operand: stack
+        }
+    }
+
+    pub fn construct_field(str: &str) -> Field {
+        match str.parse::<i64>() {
+            Ok(i) => { return Field::from(i); }
+            Err(_) => (),
+        }
+
+        match str.parse::<i32>() {
+            Ok(i) => { return Field::from(i); }
+            Err(_) => (),
+        }
+
+        Field::from(str)
     }
 }

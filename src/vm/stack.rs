@@ -1,8 +1,13 @@
+#[derive(Clone, Debug)]
 pub struct Stack<T>(Vec<T>);
 
 impl<T> Stack<T> {
     pub fn new() -> Stack<T> {
         Stack(vec![])
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     pub fn is_empty(&self) -> bool {

@@ -143,6 +143,7 @@ fn parse_words(i: &str) -> IResult<&str, Vec<&str>> {
 
 #[cfg(test)]
 mod test {
+    use crate::vm::field::Field;
     use super::*;
 
     #[test]
@@ -154,6 +155,47 @@ mod test {
         "#;
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
-        assert_eq!(instructions.unwrap().data.len(), 1);
+        let unwrapped = instructions.unwrap();
+        assert_eq!(unwrapped.data.len(), 1);
+        assert_eq!(unwrapped.data.get("@label").unwrap(), &Field::I(1));
+    }
+
+    #[test]
+    fn can_parse_labels() {
+        let assm = r#"
+        .data
+            @label 1
+        .code
+            @main
+            push @label
+            print
+        "#;
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        assert_eq!(unwrapped.labels.len(), 1);
+        assert_eq!(*unwrapped.labels.get("@main").unwrap(), 0 as usize);
+    }
+
+    #[test]
+    fn can_ignore_comments() {
+        let assm = r#"
+        # this is a test comment!
+        "#;
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        assert_eq!(unwrapped.instructions.len(), 0);
+    }
+
+    #[test]
+    fn can_ignore_empty_lines() {
+        let assm = r#"
+
+        "#;
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        assert_eq!(unwrapped.instructions.len(), 0);
     }
 }

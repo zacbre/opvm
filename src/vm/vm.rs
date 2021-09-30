@@ -163,7 +163,7 @@ mod test {
     fn test_push() {
         let mut vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(4)])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.stack.pop().to_i().unwrap(), 4 as i64);
@@ -174,7 +174,7 @@ mod test {
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
             Instruction::new(OpCode::Pop, vec![])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.len(), 0);
     }
@@ -185,7 +185,7 @@ mod test {
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
             Instruction::new(OpCode::Push, vec![Field::from(5)]),
             Instruction::new(OpCode::Add, vec![])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.pop().to_i().unwrap(), 9);
     }
@@ -196,7 +196,7 @@ mod test {
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
             Instruction::new(OpCode::Push, vec![Field::from(5)]),
             Instruction::new(OpCode::Mul, vec![])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.pop().to_i().unwrap(), 20);
     }
@@ -207,7 +207,7 @@ mod test {
             Instruction::new(OpCode::Push, vec![Field::from(10)]),
             Instruction::new(OpCode::Push, vec![Field::from(3)]),
             Instruction::new(OpCode::Sub, vec![])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.pop().to_i().unwrap(), 7);
     }
@@ -218,7 +218,7 @@ mod test {
             Instruction::new(OpCode::Push, vec![Field::from(12)]),
             Instruction::new(OpCode::Push, vec![Field::from(3)]),
             Instruction::new(OpCode::Div, vec![])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.pop().to_i().unwrap(), 4);
     }
@@ -229,7 +229,7 @@ mod test {
             Instruction::new(OpCode::Push, vec![Field::from(13)]),
             Instruction::new(OpCode::Push, vec![Field::from(3)]),
             Instruction::new(OpCode::Mod, vec![])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.pop().to_i().unwrap(), 1);
     }
@@ -239,34 +239,36 @@ mod test {
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(3)]),
             Instruction::new(OpCode::Print, vec![])
-        ]);
+        ], HashMap::new());
 
         assert_eq!(vm.stack.len(), 0);
     }
 
     #[test]
     fn test_call() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@func".to_string(), 1);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Call, vec![Field::from("func")]),
-            Instruction::new(OpCode::Label, vec![Field::from("func")]),
+            Instruction::new(OpCode::Call, vec![Field::from("@func")]),
             Instruction::new(OpCode::Push, vec![Field::from("should be on stack")]),
-        ]);
+        ], hashmap);
 
         assert_eq!(vm.stack.pop().to_str().unwrap(), "should be on stack");
     }
 
     #[test]
     fn test_ret() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@func".to_string(), 2);
+        hashmap.insert("@end".to_string(), 5);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Call, vec![Field::from("func")]),
-            Instruction::new(OpCode::Jmp, vec![Field::from("end")]),
-            Instruction::new(OpCode::Label, vec![Field::from("func")]),
+            Instruction::new(OpCode::Call, vec![Field::from("@func")]),
+            Instruction::new(OpCode::Jmp, vec![Field::from("@end")]),
             Instruction::new(OpCode::Push, vec![Field::from("test")]),
             Instruction::new(OpCode::Pop, vec![]),
             Instruction::new(OpCode::Ret, vec![]),
-            Instruction::new(OpCode::Label, vec![Field::from("end")]),
             Instruction::new(OpCode::Push, vec![Field::from("should be on stack")]),
-        ]);
+        ], hashmap);
 
         assert_eq!(vm.stack.pop().to_str().unwrap(), "should be on stack");
         assert_eq!(vm.stack.len(), 0);
@@ -274,45 +276,49 @@ mod test {
 
     #[test]
     fn test_label() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@end".to_string(), 2);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Jmp, vec![Field::from("end")]),
+            Instruction::new(OpCode::Jmp, vec![Field::from("@end")]),
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Label, vec![Field::from("end")]),
-        ]);
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
     }
 
     #[test]
     fn test_jmp() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@end".to_string(), 2);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Jmp, vec![Field::from("end")]),
+            Instruction::new(OpCode::Jmp, vec![Field::from("@end")]),
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Label, vec![Field::from("end")]),
-        ]);
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
     }
 
     #[test]
     fn test_je() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@equal".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Je, vec![Field::from("equal")]),
+            Instruction::new(OpCode::Je, vec![Field::from("@equal")]),
             Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("equal")]),
-        ]);
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@equal".to_string(), 4);
         let mut vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
             Instruction::new(OpCode::Push, vec![Field::from(2)]),
-            Instruction::new(OpCode::Je, vec![Field::from("equal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("equal")]),
-        ]);
+            Instruction::new(OpCode::Je, vec![Field::from("@equal")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.stack.pop().to_i().unwrap(), 5);
@@ -320,23 +326,25 @@ mod test {
 
     #[test]
     fn test_jne() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@notequal".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(2)]),
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Jne, vec![Field::from("notequal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("notequal")]),
-        ]);
+            Instruction::new(OpCode::Jne, vec![Field::from("@notequal")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@notequal".to_string(), 4);
         let mut vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
             Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Jne, vec![Field::from("notequal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("notequal")]),
-        ]);
+            Instruction::new(OpCode::Jne, vec![Field::from("@notequal")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.stack.pop().to_i().unwrap(), 5);
@@ -344,33 +352,36 @@ mod test {
 
     #[test]
     fn test_jle() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@less".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jle, vec![Field::from("less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("less")]),
-        ]);
+            Instruction::new(OpCode::Jle, vec![Field::from("@less")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@equal".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jle, vec![Field::from("equal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("equal")]),
-        ]);
+            Instruction::new(OpCode::Jle, vec![Field::from("@equal")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@less".to_string(), 4);
         let mut vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jle, vec![Field::from("less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("less")]),
-        ]);
+            Instruction::new(OpCode::Jle, vec![Field::from("@less")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.stack.pop().to_i().unwrap(), 5);
@@ -378,33 +389,36 @@ mod test {
 
     #[test]
     fn test_jge() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@greater".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jge, vec![Field::from("greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("greater")]),
-        ]);
+            Instruction::new(OpCode::Jge, vec![Field::from("@greater")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@equal".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jge, vec![Field::from("equal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("equal")]),
-        ]);
+            Instruction::new(OpCode::Jge, vec![Field::from("@equal")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@greater".to_string(), 4);
         let mut vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jge, vec![Field::from("greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("greater")]),
-        ]);
+            Instruction::new(OpCode::Jge, vec![Field::from("@greater")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.stack.pop().to_i().unwrap(), 5);
@@ -412,23 +426,25 @@ mod test {
 
     #[test]
     fn test_jl() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@less".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jl, vec![Field::from("less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("less")]),
-        ]);
+            Instruction::new(OpCode::Jl, vec![Field::from("@less")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@less".to_string(), 4);
         let mut vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jl, vec![Field::from("less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("less")]),
-        ]);
+            Instruction::new(OpCode::Jl, vec![Field::from("@less")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.stack.pop().to_i().unwrap(), 5);
@@ -436,32 +452,37 @@ mod test {
 
     #[test]
     fn test_jg() {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@greater".to_string(), 4);
         let vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jg, vec![Field::from("greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("greater")]),
-        ]);
+            Instruction::new(OpCode::Jg, vec![Field::from("@greater")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
         assert_eq!(vm.stack.len(), 0);
 
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@greater".to_string(), 4);
         let mut vm = create_vm(vec![
             Instruction::new(OpCode::Push, vec![Field::from(4)]),
             Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jg, vec![Field::from("greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Label, vec![Field::from("greater")]),
-        ]);
+            Instruction::new(OpCode::Jg, vec![Field::from("@greater")]),
+            Instruction::new(OpCode::Push, vec![Field::from(5)])
+        ], hashmap);
 
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.stack.pop().to_i().unwrap(), 5);
     }
 
-    fn create_vm(instructions: Vec<Instruction>) -> Vm {
-        let mut vm = Vm::new(instructions);
-        vm.execute();
+    fn create_vm(instructions: Vec<Instruction>, labels: HashMap<String, usize>) -> Vm {
+        let mut program = Program::new();
+        program.instructions = instructions;
+        program.labels = labels;
+        let mut vm = Vm::new();
+        vm.execute(program);
         vm
     }
 }

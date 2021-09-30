@@ -1,4 +1,3 @@
-use std::thread::current;
 use nom::branch::alt;
 use nom::IResult;
 use nom::bytes::complete::*;
@@ -140,4 +139,21 @@ fn match_quote(i: &str) -> IResult<&str, &str> {
 
 fn parse_words(i: &str) -> IResult<&str, Vec<&str>> {
     separated_list0(tag(" "), alt((match_quote, match_word)))(i)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn can_parse_directives() {
+        let assm = r#"
+        .data
+            @label 1
+        .code
+        "#;
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        assert_eq!(instructions.unwrap().data.len(), 1);
+    }
 }

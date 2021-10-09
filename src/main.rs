@@ -35,7 +35,7 @@ fn main() {
             jl @loop                ; less than expected, keep looping
     "#.to_string());
 
-    let mut vm = Vm::new();
+    let mut vm = Vm::new(true);
     let result = vm.execute(val.unwrap());
     match result {
         Err(e) => {

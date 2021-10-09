@@ -25,6 +25,10 @@ pub enum OpCode {
     Concat,
     Igl,
     Swap,
+    Alloc,
+    Free,
+    Load,
+    Store
 }
 
 impl From<&str> for OpCode {
@@ -54,6 +58,10 @@ impl From<&str> for OpCode {
             "dup" => OpCode::Dup,
             "concat" => OpCode::Concat,
             "swap" => OpCode::Swap,
+            "alloc" => OpCode::Alloc,
+            "free" => OpCode::Free,
+            "load" => OpCode::Load,
+            "store" => OpCode::Store,
             _ => OpCode::Igl
         }
     }
@@ -86,7 +94,11 @@ impl From<OpCode> for &str {
             OpCode::Dup => "dup",
             OpCode::Igl => "igl",
             OpCode::Concat => "concat",
-            OpCode::Swap => "swap"
+            OpCode::Swap => "swap",
+            OpCode::Alloc => "alloc",
+            OpCode::Free => "free",
+            OpCode::Load => "load",
+            OpCode::Store => "store"
         }
     }
 }

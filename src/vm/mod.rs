@@ -6,3 +6,4 @@ pub mod vm;
 mod opcode;
 mod stack;
 mod error;
+mod heap;

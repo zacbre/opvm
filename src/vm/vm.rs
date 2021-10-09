@@ -7,6 +7,7 @@ use crate::vm::error::Error;
 use crate::vm::program::Program;
 use crate::vm::stack;
 use crate::vm::stack::Stack;
+use crate::vm::heap::Heap;
 
 pub struct Vm {
     instructions: Vec<Instruction>,
@@ -15,10 +16,12 @@ pub struct Vm {
     stack: stack::Stack<Field>,
     call_stack: stack::Stack<usize>,
     pc: usize,
+    heap: HashMap<String,Heap>,
+    reflection: bool
 }
 
 impl Vm {
-    pub fn new() -> Self {
+    pub fn new(reflection: bool) -> Self {
         Vm{
             instructions: vec![],
             labels: HashMap::new(),
@@ -26,6 +29,20 @@ impl Vm {
             stack: stack::Stack::new(),
             call_stack: stack::Stack::new(),
             pc: 0,
+            heap: HashMap::new(),
+            reflection
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.heap.clear();
+
+        while self.stack.len() > 0 {
+            self.stack.pop();
+        }
+
+        while self.call_stack.len() > 0 {
+            self.call_stack.pop();
         }
     }
 
@@ -33,8 +50,15 @@ impl Vm {
         self.instructions = program.instructions;
         self.labels = program.labels;
         self.data = program.data;
-        while !self.stack.is_empty() {
-            self.stack.pop();
+
+        let stack_size_var = Field::from("$__stack_size");
+        let callstack_size_var = Field::from("$__callstack_size");
+        let pc_var = Field::from("$__pc");
+
+        if self.reflection {
+            self.allocate_heap(&stack_size_var)?;
+            self.allocate_heap(&callstack_size_var)?;
+            self.allocate_heap(&pc_var)?;
         }
 
         while (self.pc as usize) < self.instructions.len() {
@@ -185,7 +209,7 @@ impl Vm {
                             self.stack.push(Field::from(u));
                         }
                         _ => {
-                            return self.error(format!("Cannot increment non-int type at {}!", self.pc), Some(v1));
+                            return self.error(format!("Cannot increment non-int type at {}!", self.pc), Some(vec![v1]));
                         }
                     }
                 }
@@ -201,7 +225,7 @@ impl Vm {
                             self.stack.push(Field::from(u));
                         }
                         _ => {
-                            return self.error(format!("Cannot decrement non-int type at {}!", self.pc), Some(v1));
+                            return self.error(format!("Cannot decrement non-int type at {}!", self.pc), Some(vec![v1]));
                         }
                     }
                 }
@@ -224,6 +248,29 @@ impl Vm {
                     self.stack.push(v2);
                     self.stack.push(v1);
                 }
+                OpCode::Alloc => {
+                    let address = self.pop_operand(&mut instruction.operand)?;
+
+                    self.allocate_heap(&address)?;
+                }
+                OpCode::Free => {
+                    let address = self.pop_operand(&mut instruction.operand)?;
+
+                    self.free_heap(&address)?;
+                }
+                OpCode::Load => {
+                    let address = self.pop_operand(&mut instruction.operand)?;
+
+                    let heap_copy = self.load_heap(&address)?;
+                    self.stack.push(heap_copy);
+
+                }
+                OpCode::Store => {
+                    let address = self.pop_operand(&mut instruction.operand)?;
+                    let v1 = self.pop_stack()?;
+
+                    self.store_heap(&address, v1)?;
+                }
                 OpCode::Nop => (),
                 OpCode::Hlt => {
                     return Ok(());
@@ -233,11 +280,16 @@ impl Vm {
                 }
             }
             self.pc += 1;
+            if self.reflection {
+                self.store_heap(&stack_size_var, Field::from(self.stack.len()))?;
+                self.store_heap(&callstack_size_var, Field::from(self.call_stack.len()))?;
+                self.store_heap(&pc_var, Field::from(self.pc))?;
+            }
         }
         Ok(())
     }
 
-    fn error(&self, msg: String, field: Option<Field>) -> Result<(),Error> {
+    fn error(&self, msg: String, field: Option<Vec<Field>>) -> Result<(),Error> {
         let first_instruction = cmp::max(self.pc as i32 - 4, 0) as usize;
         let last_instruction = cmp::min(self.pc + 4, self.instructions.len());
         let mut stack: Vec<String> = Vec::new();
@@ -246,7 +298,10 @@ impl Vm {
             if i == self.pc {
                 match &field {
                     Some(f) => {
-                        assembled.push_str(format!(" <-- error occurred here, operand: {}", f.to_string()).as_str());
+                        assembled.push_str(format!(" <-- error occurred here, operand(s): ").as_str());
+                        for item in f {
+                            assembled.push_str(format!("{} ", item.to_string()).as_str());
+                        }
                     },
                     None => {
                         assembled.push_str(" <-- error occurred here");
@@ -310,12 +365,74 @@ impl Vm {
         }
     }
 
+    fn allocate_heap(&mut self, var: &Field) -> Result<(), Error> {
+        let cloned_field = var.clone();
+        if self.heap.contains_key(self.check_str(cloned_field)?.as_str()) {
+            return self.error("That variable was already allocated!".to_string(), Some(vec![var.clone()]));
+        }
+        self.heap.insert(var.to_string(), Heap::new());
+
+        Ok(())
+    }
+
+    fn free_heap(&mut self, var: &Field) -> Result<(), Error> {
+        let cloned_var = var.clone();
+        let field = cloned_var.to_str().unwrap();
+        if !self.heap.contains_key(field) {
+            return self.error("The variable wasn't allocated!".to_string(), Some(vec![var.clone()]));
+        }
+        self.heap.remove(field);
+        Ok(())
+    }
+
+    fn load_heap(&mut self, var: &Field) -> Result<Field, Error> {
+        let key = var.to_str().unwrap();
+        if !self.heap.contains_key(key) {
+            let err = self.error("The variable doesn't exist!".to_string(), Some(vec![var.clone()]));
+            return Err(err.err().unwrap());
+        }
+
+        let value = self.heap.get_mut(key);
+        return match value {
+            Some(v) => {
+                let cloned_item = v.item.clone();
+                return match cloned_item {
+                    Some(i) => Ok(*i),
+                    None => {
+                        let err = self.error("Unable to load from heap!".to_string(), Some(vec![var.clone()]));
+                        Err(err.err().unwrap())
+                    }
+                }
+
+            }
+            None => {
+                let err = self.error("Unable to load from heap!".to_string(), Some(vec![var.clone()]));
+                Err(err.err().unwrap())
+            }
+        }
+
+    }
+
+    fn store_heap(&mut self, var: &Field, item: Field) -> Result<(), Error> {
+        let key = var.to_str().unwrap();
+        if !self.heap.contains_key(key) {
+            return self.error("The variable does not exist!".to_string(), Some(vec![var.clone()]));
+        }
+        let item = Box::new(item);
+
+        let heap = self.heap.get_mut(key);
+        let mut heapitem = heap.unwrap();
+        heapitem.item = Some(item);
+
+        return Ok(());
+    }
+
     fn check_int(&self, operand: Field) -> Result<i64, Error> {
         let item = operand.to_i();
         match item {
             Some(i) => Ok(i),
             None => {
-                let err = self.error("Cannot parse as integer!".to_string(), Some(operand));
+                let err = self.error("Cannot parse as integer!".to_string(), Some(vec![operand]));
                 Err(err.err().unwrap())
             }
         }
@@ -326,7 +443,7 @@ impl Vm {
         match item {
             Some(u) => Ok(u),
             None => {
-                let err = self.error("Cannot parse as usize!".to_string(), Some(operand));
+                let err = self.error("Cannot parse as usize!".to_string(), Some(vec![operand]));
                 Err(err.err().unwrap())
             }
         }
@@ -337,7 +454,7 @@ impl Vm {
         match item {
             Some(s) => Ok(s),
             None => {
-                let err = self.error("Cannot parse as string!".to_string(), Some(operand));
+                let err = self.error("Cannot parse as string!".to_string(), Some(vec![operand]));
                 Err(err.err().unwrap())
             }
         }
@@ -351,8 +468,8 @@ mod test {
     #[test]
     fn test_push() -> Result<(),Error> {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)])
-        ], HashMap::new());
+            ins(OpCode::Push, 4)
+        ], None)?;
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 4 as i64);
@@ -362,9 +479,9 @@ mod test {
     #[test]
     fn test_pop() -> Result<(),Error>  {
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Pop, vec![])
-        ], HashMap::new());
+            ins(OpCode::Push, 4),
+            ins_e(OpCode::Pop)
+        ], None)?;
 
         assert_eq!(vm.stack.len(), 0);
         Ok(())
@@ -373,10 +490,10 @@ mod test {
     #[test]
     fn test_add() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Add, vec![])
-        ], HashMap::new());
+            ins(OpCode::Push, 4),
+            ins(OpCode::Push, 5),
+            ins_e(OpCode::Add)
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 9);
         Ok(())
@@ -385,10 +502,10 @@ mod test {
     #[test]
     fn test_mul() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-            Instruction::new(OpCode::Mul, vec![])
-        ], HashMap::new());
+            ins(OpCode::Push, 4),
+            ins(OpCode::Push, 5),
+            ins_e(OpCode::Mul)
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 20);
         Ok(())
@@ -397,10 +514,10 @@ mod test {
     #[test]
     fn test_sub() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(10)]),
-            Instruction::new(OpCode::Push, vec![Field::from(3)]),
-            Instruction::new(OpCode::Sub, vec![])
-        ], HashMap::new());
+            ins(OpCode::Push, 10),
+            ins(OpCode::Push, 3),
+            ins_e(OpCode::Sub)
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 7);
         Ok(())
@@ -409,10 +526,10 @@ mod test {
     #[test]
     fn test_div() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(12)]),
-            Instruction::new(OpCode::Push, vec![Field::from(3)]),
-            Instruction::new(OpCode::Div, vec![])
-        ], HashMap::new());
+            ins(OpCode::Push, 12),
+            ins(OpCode::Push, 3),
+            ins_e(OpCode::Div)
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 4);
         Ok(())
@@ -421,10 +538,10 @@ mod test {
     #[test]
     fn test_mod() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(13)]),
-            Instruction::new(OpCode::Push, vec![Field::from(3)]),
-            Instruction::new(OpCode::Mod, vec![])
-        ], HashMap::new());
+            ins(OpCode::Push, 13),
+            ins(OpCode::Push, 3),
+            ins_e(OpCode::Mod)
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 1);
         Ok(())
@@ -433,9 +550,9 @@ mod test {
     #[test]
     fn test_print() -> Result<(),Error>  {
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(3)]),
-            Instruction::new(OpCode::Print, vec![])
-        ], HashMap::new());
+            ins(OpCode::Push, 3),
+            ins_e(OpCode::Print)
+        ], None)?;
 
         assert_eq!(vm.stack.len(), 0);
         Ok(())
@@ -446,9 +563,9 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@func".to_string(), 1);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Call, vec![Field::from("@func")]),
-            Instruction::new(OpCode::Push, vec![Field::from("should be on stack")]),
-        ], hashmap);
+            ins(OpCode::Call, "@func"),
+            ins(OpCode::Push, "should be on stack"),
+        ], Some(hashmap))?;
 
         assert_eq!(vm.pop_stack()?.to_str().unwrap(), "should be on stack");
         Ok(())
@@ -460,13 +577,13 @@ mod test {
         hashmap.insert("@func".to_string(), 2);
         hashmap.insert("@end".to_string(), 5);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Call, vec![Field::from("@func")]),
-            Instruction::new(OpCode::Jmp, vec![Field::from("@end")]),
-            Instruction::new(OpCode::Push, vec![Field::from("test")]),
-            Instruction::new(OpCode::Pop, vec![]),
-            Instruction::new(OpCode::Ret, vec![]),
-            Instruction::new(OpCode::Push, vec![Field::from("should be on stack")]),
-        ], hashmap);
+            ins(OpCode::Call, "@func"),
+            ins(OpCode::Jmp, "@end"),
+            ins(OpCode::Push, "test"),
+            ins_e(OpCode::Pop),
+            ins_e(OpCode::Ret),
+            ins(OpCode::Push, "should be on stack"),
+        ], Some(hashmap))?;
 
         assert_eq!(vm.pop_stack()?.to_str().unwrap(), "should be on stack");
         assert_eq!(vm.stack.len(), 0);
@@ -478,9 +595,9 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@end".to_string(), 2);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Jmp, vec![Field::from("@end")]),
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-        ], hashmap);
+            ins(OpCode::Jmp, "@end"),
+            ins(OpCode::Push, 1),
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
         Ok(())
@@ -491,9 +608,9 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@end".to_string(), 2);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Jmp, vec![Field::from("@end")]),
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-        ], hashmap);
+            ins(OpCode::Jmp, "@end"),
+            ins(OpCode::Push, 1),
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
         Ok(())
@@ -504,22 +621,22 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Je, vec![Field::from("@equal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)]),
-        ], hashmap);
+            ins(OpCode::Push, 1),
+            ins(OpCode::Push, 1),
+            ins(OpCode::Je, "@equal"),
+            ins(OpCode::Push, 5),
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 4);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Push, vec![Field::from(2)]),
-            Instruction::new(OpCode::Je, vec![Field::from("@equal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 1),
+            ins(OpCode::Push, 2),
+            ins(OpCode::Je, "@equal"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 5);
@@ -531,22 +648,22 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@notequal".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(2)]),
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Jne, vec![Field::from("@notequal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 2),
+            ins(OpCode::Push, 1),
+            ins(OpCode::Jne, "@notequal"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@notequal".to_string(), 4);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Push, vec![Field::from(1)]),
-            Instruction::new(OpCode::Jne, vec![Field::from("@notequal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 1),
+            ins(OpCode::Push, 1),
+            ins(OpCode::Jne, "@notequal"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 5);
@@ -558,33 +675,33 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jle, vec![Field::from("@less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 4),
+            ins(OpCode::Push, 7),
+            ins(OpCode::Jle, "@less"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jle, vec![Field::from("@equal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 7),
+            ins(OpCode::Push, 7),
+            ins(OpCode::Jle, "@equal"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 4);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jle, vec![Field::from("@less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 7),
+            ins(OpCode::Push, 4),
+            ins(OpCode::Jle, "@less"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 5);
@@ -596,33 +713,33 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jge, vec![Field::from("@greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 7),
+            ins(OpCode::Push, 4),
+            ins(OpCode::Jge, "@greater"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jge, vec![Field::from("@equal")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 7),
+            ins(OpCode::Push, 7),
+            ins(OpCode::Jge, "@equal"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 4);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jge, vec![Field::from("@greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 4),
+            ins(OpCode::Push, 7),
+            ins(OpCode::Jge, "@greater"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 5);
@@ -634,22 +751,22 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jl, vec![Field::from("@less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 4),
+            ins(OpCode::Push, 7),
+            ins(OpCode::Jl, "@less"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 4);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jl, vec![Field::from("@less")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 7),
+            ins(OpCode::Push, 4),
+            ins(OpCode::Jl, "@less"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 1);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 5);
@@ -661,22 +778,22 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 4);
         let vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Jg, vec![Field::from("@greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 7),
+            ins(OpCode::Push, 4),
+            ins(OpCode::Jg, "@greater"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
         assert_eq!(vm.stack.len(), 0);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 4);
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(4)]),
-            Instruction::new(OpCode::Push, vec![Field::from(7)]),
-            Instruction::new(OpCode::Jg, vec![Field::from("@greater")]),
-            Instruction::new(OpCode::Push, vec![Field::from(5)])
-        ], hashmap);
+            ins(OpCode::Push, 4),
+            ins(OpCode::Push, 7),
+            ins(OpCode::Jg, "@greater"),
+            ins(OpCode::Push, 5)
+        ], Some(hashmap))?;
 
 
         assert_eq!(vm.stack.len(), 1);
@@ -687,9 +804,9 @@ mod test {
     #[test]
     fn test_dup() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(10)]),
-            Instruction::new(OpCode::Dup, vec![]),
-        ], HashMap::new());
+            ins(OpCode::Push, 10),
+            ins_e(OpCode::Dup),
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 10);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 10);
@@ -699,9 +816,9 @@ mod test {
     #[test]
     fn test_inc() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(10)]),
-            Instruction::new(OpCode::Inc, vec![]),
-        ], HashMap::new());
+            ins(OpCode::Push, 10),
+            ins_e(OpCode::Inc),
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 11);
         Ok(())
@@ -710,9 +827,9 @@ mod test {
     #[test]
     fn test_dec() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(10)]),
-            Instruction::new(OpCode::Dec, vec![]),
-        ], HashMap::new());
+            ins(OpCode::Push, 10),
+            ins_e(OpCode::Dec),
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 9);
         Ok(())
@@ -721,10 +838,10 @@ mod test {
     #[test]
     fn test_swap() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(10)]),
-            Instruction::new(OpCode::Push, vec![Field::from(20)]),
-            Instruction::new(OpCode::Swap, vec![]),
-        ], HashMap::new());
+            ins(OpCode::Push, 10),
+            ins(OpCode::Push, 20),
+            ins_e(OpCode::Swap),
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 10);
         assert_eq!(vm.pop_stack()?.to_i().unwrap(), 20);
@@ -734,21 +851,82 @@ mod test {
     #[test]
     fn test_concat() -> Result<(),Error>  {
         let mut vm = create_vm(vec![
-            Instruction::new(OpCode::Push, vec![Field::from(10)]),
-            Instruction::new(OpCode::Push, vec![Field::from(20)]),
-            Instruction::new(OpCode::Concat, vec![]),
-        ], HashMap::new());
+            ins(OpCode::Push, 10),
+            ins(OpCode::Push, 20),
+            ins_e(OpCode::Concat),
+        ], None)?;
 
         assert_eq!(vm.pop_stack()?.to_str().unwrap(), "1020");
         Ok(())
     }
 
-    fn create_vm(instructions: Vec<Instruction>, labels: HashMap<String, usize>) -> Vm {
+    #[test]
+    fn test_alloc_store() -> Result<(),Error>  {
+        let mut vm = create_vm(vec![
+            ins(OpCode::Alloc, "$myvar"),
+            ins(OpCode::Push, 20 as usize),
+            ins(OpCode::Store, "$myvar"),
+            ins(OpCode::Alloc, "$myvar1"),
+            ins(OpCode::Push, "hey this is my lame string"),
+            ins(OpCode::Store, "$myvar1"),
+        ], None)?;
+
+        assert_eq!(vm.heap.len(), 5);
+        let mutmap = vm.heap.get_mut("$myvar");
+        let unwrapped = mutmap.unwrap().item.clone().unwrap();
+        assert_eq!(vm.check_usize(*unwrapped)?, 20);
+
+        let mutmap1 = vm.heap.get_mut("$myvar1");
+        let unwrapped1 = mutmap1.unwrap().item.clone().unwrap();
+        assert_eq!(vm.check_str(*unwrapped1)?, "hey this is my lame string");
+        Ok(())
+    }
+
+    #[test]
+    fn test_alloc_load() -> Result<(),Error>  {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("@match".to_string(), 4);
+        let mut vm = create_vm(vec![
+            ins(OpCode::Alloc, "$myvar"),
+            ins(OpCode::Push, 20 as usize),
+            ins(OpCode::Store, "$myvar"),
+            ins(OpCode::Load, "$__stack_size"),
+            ins(OpCode::Push, 1),
+            ins(OpCode::Jl, "@end"),
+            ins(OpCode::Push, 45),
+            ins_e(OpCode::Nop)
+        ], None)?;
+
+        assert_eq!(vm.heap.len(), 4);
+        let popped_stack = vm.pop_stack()?;
+        assert_eq!(45, vm.check_int(popped_stack)?);
+        Ok(())
+    }
+
+    fn ins<T>(opcode: OpCode, item: T) -> Instruction where Field: From<T> {
+        Instruction::new(opcode, vec![Field::from(item)])
+    }
+
+    fn ins_e(opcode: OpCode) -> Instruction {
+        Instruction::new(opcode, vec![])
+    }
+
+    fn create_vm(instructions: Vec<Instruction>, labels: Option<HashMap<String, usize>>) -> Result<Vm,Error> {
+        let mut vm = Vm::new(true);
+        execute(&mut vm, instructions, labels)?;
+        Ok(vm)
+    }
+
+    fn execute(vm: &mut Vm, instructions: Vec<Instruction>, labels: Option<HashMap<String, usize>>) -> Result<(),Error> {
         let mut program = Program::new();
         program.instructions = instructions;
-        program.labels = labels;
-        let mut vm = Vm::new();
-        vm.execute(program);
-        vm
+
+        if labels.is_some() {
+            program.labels = labels.unwrap();
+        }
+
+        vm.execute(program)?;
+
+        Ok(())
     }
 }

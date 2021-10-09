@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, io};
 use crate::vm::instruction::Instruction;
 use crate::vm::opcode::OpCode;
 use crate::vm::field::Field;
@@ -8,6 +8,7 @@ use crate::vm::program::Program;
 use crate::vm::stack;
 use crate::vm::stack::Stack;
 use crate::vm::heap::Heap;
+use std::io::Write;
 
 pub struct Vm {
     instructions: Vec<Instruction>,
@@ -118,7 +119,15 @@ impl Vm {
                     self.stack.push(Field::I(i1 % i2));
                 }
                 OpCode::Print => {
+                    print!("{}", self.pop_stack()?);
+                    io::stdout().flush();
+                }
+                OpCode::Println => {
                     println!("{}", self.pop_stack()?);
+                }
+                OpCode::Input => {
+                    let input = self.get_input();
+                    self.stack.push(Field::from(input));
                 }
                 OpCode::Call => {
                     self.call_stack.push(self.pc + 1);
@@ -458,6 +467,15 @@ impl Vm {
                 Err(err.err().unwrap())
             }
         }
+    }
+
+    fn get_input(&self) -> String{
+        let mut input = String::new();
+        match io::stdin().read_line(&mut input) {
+            Ok(_goes_into_input_above) => {},
+            Err(_no_updates_is_fine) => {},
+        }
+        input.trim().to_string()
     }
 }
 

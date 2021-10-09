@@ -7,8 +7,13 @@ mod vm;
 fn main() {
     let lexer = Lexer::new();
     let val = lexer.process(r#"
-    push "Hello, World!"
+    push "What is your name? "
     print
+    input
+    push "Hi, "
+    swap
+    concat
+    println
     "#.to_string());
 
     let mut vm = Vm::new(true);

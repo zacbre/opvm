@@ -1,4 +1,4 @@
-#opvm
+# opvm
 opvm is a simple stack based virtual machine written in rust.
 
 ## Usage

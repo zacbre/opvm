@@ -1,5 +1,6 @@
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum OpCode {
+    Move,
     Push,
     Pop,
     Add,
@@ -12,6 +13,7 @@ pub enum OpCode {
     Input,
     Call,
     Ret,
+    Test,
     Jmp,
     Je,
     Jne,
@@ -21,21 +23,21 @@ pub enum OpCode {
     Jg,
     Inc,
     Dec,
+    Xor,
     Nop,
     Hlt,
     Dup,
-    Concat,
     Igl,
-    Swap,
     Alloc,
     Free,
-    Load,
-    Store
+    //Load,
+    //Store
 }
 
 impl From<&str> for OpCode {
     fn from(str: &str) -> Self {
         match str {
+            "mov" => OpCode::Move,
             "push" => OpCode::Push,
             "pop" => OpCode::Pop,
             "add" => OpCode::Add,
@@ -48,6 +50,7 @@ impl From<&str> for OpCode {
             "input" => OpCode::Input,
             "call" => OpCode::Call,
             "ret" => OpCode::Ret,
+            "test" => OpCode::Test,
             "jmp" => OpCode::Jmp,
             "je" => OpCode::Je,
             "jne" => OpCode::Jne,
@@ -57,15 +60,14 @@ impl From<&str> for OpCode {
             "jg" => OpCode::Jg,
             "inc" => OpCode::Inc,
             "dec" => OpCode::Dec,
+            "xor" => OpCode::Xor,
             "nop" => OpCode::Nop,
             "hlt" => OpCode::Hlt,
             "dup" => OpCode::Dup,
-            "concat" => OpCode::Concat,
-            "swap" => OpCode::Swap,
             "alloc" => OpCode::Alloc,
             "free" => OpCode::Free,
-            "load" => OpCode::Load,
-            "store" => OpCode::Store,
+            //"load" => OpCode::Load,
+            //"store" => OpCode::Store,
             _ => OpCode::Igl
         }
     }
@@ -74,6 +76,7 @@ impl From<&str> for OpCode {
 impl From<OpCode> for &str {
     fn from(opcode: OpCode) -> Self {
         match opcode {
+            OpCode::Move => "mov",
             OpCode::Push => "push",
             OpCode::Pop => "pop",
             OpCode::Add => "add",
@@ -86,6 +89,7 @@ impl From<OpCode> for &str {
             OpCode::Input => "input",
             OpCode::Call => "call",
             OpCode::Ret => "ret",
+            OpCode::Test => "test",
             OpCode::Jmp => "jmp",
             OpCode::Je => "je",
             OpCode::Jne => "jne",
@@ -95,16 +99,15 @@ impl From<OpCode> for &str {
             OpCode::Jg => "jg",
             OpCode::Inc => "inc",
             OpCode::Dec => "dec",
+            OpCode::Xor => "xor",
             OpCode::Nop => "nop",
             OpCode::Hlt => "hlt",
             OpCode::Dup => "dup",
             OpCode::Igl => "igl",
-            OpCode::Concat => "concat",
-            OpCode::Swap => "swap",
             OpCode::Alloc => "alloc",
             OpCode::Free => "free",
-            OpCode::Load => "load",
-            OpCode::Store => "store"
+            //OpCode::Load => "load",
+            //OpCode::Store => "store"
         }
     }
 }

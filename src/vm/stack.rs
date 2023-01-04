@@ -10,6 +10,7 @@ impl<T> Stack<T> {
         self.0.len()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

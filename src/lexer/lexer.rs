@@ -121,7 +121,7 @@ fn build_token<'a>(item: IResult<&'a str,&str>, token_type: TokenType) -> IResul
 }
 
 fn match_word(i: &str) -> IResult<&str, &str> {
-    take_till(|c| c == ' ' || c == '\n')(i)
+    take_till(|c| c == ' ' || c == ',' || c == '\n')(i)
 }
 
 fn get_quoted(i: &str) -> IResult<&str, &str> {
@@ -223,5 +223,39 @@ mod test {
         assert_eq!(*unwrapped.data.get("@hi").unwrap(), Field::from("ayy"));
         assert_eq!(*unwrapped.data.get("@xdd").unwrap(), Field::from(2));
         assert_eq!(*unwrapped.labels.get("@main").unwrap(), 0);
+    }
+
+    #[test]
+    fn can_parse_commas() {
+        let assm = r#"
+        #data
+            .label 1
+        #code
+            .main
+            mov ra,0
+        "#;
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        assert_eq!(unwrapped.labels.len(), 1);
+        println!("{:?}", unwrapped.instructions[0].operand);
+        //assert_eq!(unwrapped.instructions[0].operand, 1);
+    }
+
+    #[test]
+    fn can_parse_commas_with_offsets() {
+        let assm = r#"
+        #data
+            .label 1
+        #code
+            .main
+            mov ra[2],0
+        "#;
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        assert_eq!(unwrapped.labels.len(), 1);
+        println!("{:?}", unwrapped.instructions[0].operand);
+        //assert_eq!(unwrapped.instructions[0].operand, 1);
     }
 }

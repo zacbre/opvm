@@ -7,3 +7,4 @@ mod opcode;
 mod stack;
 mod error;
 mod heap;
+mod register;

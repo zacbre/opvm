@@ -1,6 +1,7 @@
 use crate::vm::opcode;
 use crate::vm::opcode::OpCode;
 use crate::vm::field::Field;
+use crate::vm::register::{OffsetOperand, Register};
 use crate::vm::stack::Stack;
 
 #[derive(Clone, Debug)]
@@ -10,6 +11,7 @@ pub struct Instruction {
 }
 
 impl Instruction {
+    #[allow(dead_code)]
     pub fn new(opcode: OpCode, operand: Vec<Field>) -> Self {
         let mut stack: Stack<Field> = Stack::new();
         for field in operand {
@@ -30,7 +32,21 @@ impl Instruction {
         }
         let mut stack: Stack<Field> = Stack::new();
         for i in 1..str.len() {
-            stack.push(Instruction::construct_field(str[i]));
+            let (register, offset_type) = Register::from(str[i]);
+            if register == Register::Unknown {
+                if let Some((field1, field2)) = Register::parse_with_comma(str[i]) {
+                    stack.push(field1);
+                    stack.push(field2);
+                } else {
+                    stack.push(Instruction::construct_field(str[i]));
+                }
+            } else {
+                if offset_type == OffsetOperand::Default {
+                    stack.push(Field::R(register));
+                } else {
+                    stack.push(Field::RO(register, offset_type));
+                }
+            }
         }
 
         Instruction {
@@ -40,6 +56,13 @@ impl Instruction {
     }
 
     pub fn construct_field(str: &str) -> Field {
+        if str.contains("0x") {
+            match i64::from_str_radix(str.trim_start_matches("0x"), 16) {
+                Ok(i) => { return Field::from(i); }
+                Err(_) => (),
+            }
+        }
+
         match str.parse::<i64>() {
             Ok(i) => { return Field::from(i); }
             Err(_) => (),
@@ -49,6 +72,12 @@ impl Instruction {
             Ok(i) => { return Field::from(i); }
             Err(_) => (),
         }
+
+        match str.parse::<usize>() {
+            Ok(i) => { return Field::from(i); }
+            Err(_) => (),
+        }
+
 
         Field::from(str)
     }

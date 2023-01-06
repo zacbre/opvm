@@ -1,7 +1,7 @@
 use std::{cmp, io};
 use crate::vm::instruction::Instruction;
 use crate::vm::opcode::OpCode;
-use crate::vm::field::Field;
+use crate::vm::field::{CastType, Field};
 use std::collections::HashMap;
 use crate::vm::error::Error;
 use crate::vm::program::Program;
@@ -10,15 +10,16 @@ use std::io::Write;
 use crate::vm::register::{OffsetOperand, Register, Registers};
 use crate::vm::stack::Stack;
 
+#[derive(Debug)]
 pub struct Vm {
     instructions: Vec<Instruction>,
     labels: HashMap<String,usize>,
     data: HashMap<String, Field>,
-    registers: Registers,
+    pub registers: Registers,
     stack: Stack<Field>,
     call_stack: Stack<usize>,
     pc: usize,
-    heap: Heap,
+    pub heap: Heap,
     reflection: bool
 }
 
@@ -64,29 +65,15 @@ impl Vm {
                     let register = self.pop_operand(&mut instruction.operand)?;
                     let (r, operand) = register.to_r(&self)?;
                     match &data {
+                        &Field::C(c) if operand != OffsetOperand::Default => {
+                            Registers::set_offset_for_p(self, r, operand, Field::from(c))?;
+                        }
                         Field::S(s) if operand != OffsetOperand::Default => {
                             if self.data.contains_key(s.as_str()) {
                                 self.registers.set(r, self.data.get(s.as_str()).unwrap().clone());
                             } else {
                                 if s.len() == 1 {
-                                    let data = self.registers.get(r).to_p(&self)?;
-                                    let mut boxed = unsafe { Box::from_raw(data) };
-                                    let number = match operand {
-                                        OffsetOperand::Number(n) => n,
-                                        OffsetOperand::Register(r) => {
-                                            let data = self.registers.get(r);
-                                            if let Ok(u) = data.to_u(&self) {
-                                                u
-                                            } else {
-                                                data.to_i(&self)? as usize
-                                            }
-                                        },
-                                        _ => 0
-                                    };
-                                    let char = s.chars().nth(0).unwrap();
-                                    boxed[number] = char as usize;
-                                    let raw = Box::into_raw(boxed);
-                                    self.registers.set(r, Field::from(raw));
+                                    Registers::set_offset_for_p(self, r, operand, Field::from(s.as_str()))?;
                                 } else {
                                     return self.error(format!("Cannot find symbol '{}' at {}!", s, self.pc), Some(vec![data]));
                                 }
@@ -98,49 +85,17 @@ impl Vm {
                             } else {
                                 if s.len() == 1 {
                                     let char = s.chars().nth(0).unwrap();
-                                    self.registers.set(r, Field::from(char as usize));
+                                    self.registers.set(r, Field::from(char));
                                 } else {
                                     return self.error(format!("Cannot find symbol '{}' at {}!", s, self.pc), Some(vec![data]));
                                 }
                             }
                         }
-                        Field::I(i) if operand != OffsetOperand::Default => {
-                            let data = self.registers.get(r).to_p(&self)?;
-                            let mut boxed = unsafe { Box::from_raw(data) };
-                            let number = match operand {
-                                OffsetOperand::Number(n) => n,
-                                OffsetOperand::Register(r) => {
-                                    let data = self.registers.get(r);
-                                    if let Ok(u) = data.to_u(&self) {
-                                        u
-                                    } else {
-                                        data.to_i(&self)? as usize
-                                    }
-                                },
-                                _ => 0
-                            };
-                            boxed[number] = *i as usize;
-                            let raw = Box::into_raw(boxed);
-                            self.registers.set(r, Field::from(raw));
+                        &Field::I(i) if operand != OffsetOperand::Default => {
+                            Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
                         }
-                        Field::U(i) if operand != OffsetOperand::Default => {
-                            let data = self.registers.get(r).to_p(&self)?;
-                            let mut boxed = unsafe { Box::from_raw(data) };
-                            let number = match operand {
-                                OffsetOperand::Number(n) => n,
-                                OffsetOperand::Register(r) => {
-                                    let data = self.registers.get(r);
-                                    if let Ok(u) = data.to_u(&self) {
-                                        u
-                                    } else {
-                                        data.to_i(&self)? as usize
-                                    }
-                                },
-                                _ => 0
-                            };
-                            boxed[number] = *i as usize;
-                            let raw = Box::into_raw(boxed);
-                            self.registers.set(r, Field::from(raw));
+                        &Field::U(i) if operand != OffsetOperand::Default => {
+                            Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
                         }
                         Field::R(r2) => {
                             self.registers.set(r, self.registers.get(r2.clone()).clone());
@@ -197,7 +152,10 @@ impl Vm {
                         let p = self.registers.get(r);
                         // box field, unbox and get offset?
                         if let Ok(po) = p.to_p(&self) {
-                            let b = unsafe { Box::from_raw(po) };
+                            if !self.heap.contains(po) {
+                                return self.error("Cannot set offset for allocation because memory has already been freed!".to_string(), Some(vec![p.clone()]));
+                            }
+                            let b = Heap::deref(po);
                             let field = if offset_type == OffsetOperand::Default {
                                 let mut output = String::default();
                                 for item in b.iter() {
@@ -205,27 +163,24 @@ impl Vm {
                                 }
                                 Field::from(output)
                             } else {
-                                let number = match offset_type {
-                                    OffsetOperand::Number(n) => n,
-                                    OffsetOperand::Register(r) => {
-                                        let data = self.registers.get(r);
-                                        if let Ok(u) = data.to_u(&self) {
-                                            u
-                                        } else {
-                                            data.to_i(&self)? as usize
-                                        }
-                                    },
-                                    _ => 0
-                                };
+                                let number = offset_type.resolve(self)?;
                                 let b_offset = b[number].clone();
-                                let field = Field::from(b_offset);
-                                field
+                                Field::from(b_offset)
                             };
-                            let ptr = Box::into_raw(b);
-                            self.registers.set(r, Field::from(ptr));
+                            Heap::reref(b);
                             field
                         } else {
-                            p.clone()
+                            match p {
+                                Field::S(s) => {
+                                    if offset_type != OffsetOperand::Default {
+                                        let offset = offset_type.resolve(self)?;
+                                        Field::from(s.chars().collect::<Vec<char>>()[offset])
+                                    } else {
+                                        p.clone()
+                                    }
+                                }
+                                _ => p.clone()
+                            }
                         }
                     } else {
                         field.clone()
@@ -334,6 +289,10 @@ impl Vm {
                             u += 1;
                             self.registers.set(register, Field::from(u));
                         }
+                        Field::C(c) => {
+                            let new_char: char = (c as u8 + 1) as char;
+                            self.registers.set(register, Field::from(new_char));
+                        }
                         _ => {
                             return self.error(format!("Cannot decrement non-int type at {}!", self.pc), Some(vec![v1]));
                         }
@@ -351,6 +310,10 @@ impl Vm {
                         Field::U(mut u) => {
                             u -= 1;
                             self.registers.set(register, Field::from(u));
+                        }
+                        Field::C(c) => {
+                            let new_char: char = (c as u8 - 1) as char;
+                            self.registers.set(register, Field::from(new_char));
                         }
                         _ => {
                             return self.error(format!("Cannot decrement non-int type at {}!", self.pc), Some(vec![v1]));
@@ -372,12 +335,7 @@ impl Vm {
                     let allocation_size = match &to_alloc {
                         Field::R(r) => {
                             let value = self.registers.get(r.clone());
-                            if let Ok(u) = value.to_u(&self) {
-                                u
-                            } else {
-                                let i = value.to_i(&self)?;
-                                i as usize
-                            }
+                            value.to_i_or_u(&self)?
                         },
                         Field::U(u) => *u,
                         Field::I(i) => *i as usize,
@@ -405,7 +363,14 @@ impl Vm {
                     let (r, _) = register.to_r(&self)?;
                     let field = self.registers.get(r);
                     self.free_heap(field.to_p(&self)?);
-                    self.registers.set(r, Field::from(0));
+                }
+                OpCode::Cast => {
+                    let data = self.pop_operand(&mut instruction.operand)?;
+                    let register = self.pop_operand(&mut instruction.operand)?;
+                    let (r, ro) = register.to_r(&self)?;
+                    let field = self.registers.get(r);
+                    let output = field.clone().cast(&self, CastType::from(data.to_s(&self)?.as_str()), ro)?;
+                    self.registers.set(r, output);
                 }
                 OpCode::Nop => (),
                 OpCode::Hlt => {
@@ -437,6 +402,9 @@ impl Vm {
                         assembled.push_str(format!(" <-- error occurred here, operand(s): ").as_str());
                         for item in f {
                             match item {
+                                Field::C(c) => {
+                                    assembled.push_str(format!("{}", c).as_str());
+                                }
                                 Field::I(i) => {
                                     assembled.push_str(format!("{} ", i).as_str());
                                 }
@@ -447,6 +415,7 @@ impl Vm {
                                     if s.len() == 0 {
                                         continue;
                                     }
+                                    assembled.push_str(format!("{} ", s).as_str());
                                 },
                                 _ => {
                                     assembled.push_str(format!("{} ", item.to_string()).as_str());
@@ -520,8 +489,8 @@ impl Vm {
         Ok(Field::P(self.heap.allocate(size)))
     }
 
-    fn free_heap(&self, var: *mut [usize]) {
-        unsafe { self.heap.deallocate(var) }
+    fn free_heap(&mut self, var: *mut [usize]) {
+        unsafe { self.heap.free(var) }
     }
 
     fn get_input(&self) -> String{
@@ -533,46 +502,33 @@ impl Vm {
         input.trim().to_string()
     }
 
-    fn get_fields_from_registers_or_data(&mut self, instruction: &mut Instruction) -> Result<(Register, i64, i64), Error> {
+    fn get_usize_from_register(&mut self, register: &Field) -> Result<usize, Error> {
+        let r1 = register.to_r(&self);
+        match r1 {
+            Ok((r, _)) => {
+                let register1_value = self.registers.get(r).clone();
+                Ok(register1_value.to_i_or_u(&self)?)
+            },
+            Err(_) => {
+                let key = register.to_str(&self);
+                match key {
+                    Ok(k) => if self.data.contains_key(k) {
+                        Ok(self.data.get(k).unwrap().to_i_or_u(&self)?)
+                    } else {
+                        return Err(self.error(format!("Operand '{}' is not valid here.", k), Some(vec![register.clone()])).unwrap_err());
+                    }
+                    Err(_) => Ok(register.to_i_or_u(&self)?)
+                }
+            }
+        }
+    }
+
+    fn get_fields_from_registers_or_data(&mut self, instruction: &mut Instruction) -> Result<(Register, usize, usize), Error> {
         let register1 = self.pop_operand(&mut instruction.operand)?;
-        let r1 = register1.to_r(&self);
-        let i1 = if r1.is_ok() {
-            let (r1, _) = r1.unwrap();
-            let register1_value = self.registers.get(r1).clone();
-            register1_value.to_i(&self)?
-        } else {
-            // check data
-            let key = register1.to_str(&self);
-            match key {
-                Ok(k) => if self.data.contains_key(k) {
-                    self.data.get(k).unwrap().to_i(&self)?
-                } else {
-                    return Err(self.error(format!("Operand '{}' is not valid here.", k), Some(vec![register1])).unwrap_err());
-                }
-                Err(_) => register1.to_i(&self)?
-            }
-        };
-
         let register2 = self.pop_operand(&mut instruction.operand)?;
-        let r2 = register2.to_r(&self);
-        let i2 = if r2.is_ok() {
-            let (r2, _) = r2.unwrap();
-            let register2_value = self.registers.get(r2).clone();
-            register2_value.to_i(&self)?
-        } else {
-            // check data
-            let key = register2.to_str(&self);
-            match key {
-                Ok(k) => if self.data.contains_key(k) {
-                    self.data.get(k).unwrap().to_i(&self)?
-                } else {
-                    return Err(self.error(format!("Operand '{}' is not valid here.", k), Some(vec![register2])).unwrap_err());
-                }
-                Err(_) => register2.to_i(&self)?
-            }
-        };
-
-        return Ok((register2.to_r(&self)?.0, i1, i2));
+        let u1 = self.get_usize_from_register(&register1)?;
+        let u2 = self.get_usize_from_register(&register2)?;
+        return Ok((register2.to_r(&self)?.0, u1, u2));
     }
 }
 
@@ -585,10 +541,10 @@ mod test {
         let mut hm = HashMap::new();
         hm.insert("uhoh".to_string(), Field::from("Uh OH!"));
         let vm = create_vm_with_data(vec![
-            ins_vec(OpCode::Move, vec![Field::R(Register::Ra), Field::I(4)]),
-            ins_vec(OpCode::Move, vec![Field::R(Register::Rb), Field::R(Register::Ra)]),
-            ins_vec(OpCode::Move, vec![Field::R(Register::Rc), Field::R(Register::Rb)]),
-            ins_vec(OpCode::Move, vec![Field::R(Register::Rd), Field::S("uhoh".to_string())]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Register::Ra.into()]),
+            ins_vec(OpCode::Move, vec![Register::Rc.into(), Register::Rb.into()]),
+            ins_vec(OpCode::Move, vec![Register::Rd.into(), Field::S("uhoh".to_string())]),
         ], None, hm)?;
 
         assert_eq!(vm.registers.ra, Field::I(4));
@@ -605,9 +561,9 @@ mod test {
             ins(OpCode::Push, Register::Ra)
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 4);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
         assert_eq!(vm.stack.len(), 1);
-        assert_eq!(vm.pop_stack()?.to_i(&vm)?, 4 as i64);
+        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
         Ok(())
     }
 
@@ -620,8 +576,8 @@ mod test {
         ], None)?;
 
         assert_eq!(vm.stack.len(), 0);
-        assert_eq!(vm.registers.rb.to_i(&vm)?, 4);
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 4);
+        assert_eq!(vm.registers.rb.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
         Ok(())
     }
 
@@ -633,14 +589,14 @@ mod test {
             ins_vec(OpCode::Add, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 9);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 9);
 
         let vm = create_vm(vec![
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
             ins_vec(OpCode::Add, vec![Register::Ra.into(), Field::from(12)])
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 16);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 16);
         Ok(())
     }
 
@@ -652,7 +608,7 @@ mod test {
             ins_vec(OpCode::Mul, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 20);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 20);
         Ok(())
     }
 
@@ -664,7 +620,7 @@ mod test {
             ins_vec(OpCode::Sub, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 7);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 7);
         Ok(())
     }
 
@@ -676,7 +632,7 @@ mod test {
             ins_vec(OpCode::Div, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 4);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
         Ok(())
     }
 
@@ -688,7 +644,7 @@ mod test {
             ins_vec(OpCode::Mod, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 1);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 1);
         Ok(())
     }
 
@@ -712,7 +668,7 @@ mod test {
             ins(OpCode::Push, Register::Ra),
         ], Some(hashmap))?;
 
-        assert_eq!(vm.pop_stack()?.to_i(&vm)?, 4);
+        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
         Ok(())
     }
 
@@ -730,9 +686,9 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(8)]),
         ], Some(hashmap))?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 4);
-        assert_eq!(vm.registers.rb.to_i(&vm)?, 9);
-        assert_eq!(vm.registers.rc.to_i(&vm)?, 8);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.rb.to_i_or_u(&vm)?, 9);
+        assert_eq!(vm.registers.rc.to_i_or_u(&vm)?, 8);
         Ok(())
     }
 
@@ -758,7 +714,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
         Ok(())
     }
 
@@ -774,7 +730,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 5);
@@ -786,7 +742,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_eq!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
         Ok(())
     }
 
@@ -802,7 +758,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@notequal".to_string(), 5);
@@ -814,7 +770,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_eq!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
         Ok(())
     }
 
@@ -830,7 +786,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 5);
@@ -841,7 +797,7 @@ mod test {
             ins(OpCode::Jle, "@equal"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 5);
@@ -852,7 +808,7 @@ mod test {
             ins(OpCode::Jle, "@less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
-        assert_eq!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
         Ok(())
     }
 
@@ -868,7 +824,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 5);
@@ -879,7 +835,7 @@ mod test {
             ins(OpCode::Jge, "@equal"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 5);
@@ -890,7 +846,7 @@ mod test {
             ins(OpCode::Jge, "@greater"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
-        assert_eq!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
         Ok(())
     }
 
@@ -906,7 +862,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 5);
@@ -917,7 +873,7 @@ mod test {
             ins(OpCode::Jl, "@less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
-        assert_eq!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
         Ok(())
     }
 
@@ -933,7 +889,7 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 5);
@@ -944,7 +900,7 @@ mod test {
             ins(OpCode::Jge, "@greater"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
-        assert_eq!(vm.registers.get(Register::Rc).to_i(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
         Ok(())
     }
 
@@ -956,8 +912,8 @@ mod test {
             ins_e(OpCode::Dup),
         ], None)?;
 
-        assert_eq!(vm.pop_stack()?.to_i(&vm)?, 4);
-        assert_eq!(vm.pop_stack()?.to_i(&vm)?, 4);
+        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
         Ok(())
     }
 
@@ -968,7 +924,7 @@ mod test {
             ins(OpCode::Inc, Register::Ra)
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 11);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 11);
         Ok(())
     }
 
@@ -979,7 +935,7 @@ mod test {
             ins(OpCode::Dec, Register::Ra)
         ], None)?;
 
-        assert_eq!(vm.registers.ra.to_i(&vm)?, 9);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 9);
         Ok(())
     }
 
@@ -991,7 +947,7 @@ mod test {
             ins_vec(OpCode::Xor, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.rd.to_i(&vm)?, 0);
+        assert_eq!(vm.registers.rd.to_i_or_u(&vm)?, 0);
 
         let vm = create_vm(vec![
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(100)]),
@@ -999,7 +955,7 @@ mod test {
             ins_vec(OpCode::Xor, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.rd.to_i(&vm)?, 110);
+        assert_eq!(vm.registers.rd.to_i_or_u(&vm)?, 110);
         Ok(())
     }
 
@@ -1039,17 +995,81 @@ mod test {
 
     #[test]
     fn test_free() -> Result<(),Error> {
-        let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(5)]),
+        let mut vm = create_vm(vec![
+            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
             ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from(6)]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from(12)]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from(18)]),
-            ins(OpCode::Free, Register::Rd)
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
+            ins(OpCode::Println, Register::Rd),
         ], None)?;
 
-        let field = vm.registers.rd;
-        assert_eq!(field, Field::I(0));
+        assert_eq!(vm.heap.len(), 1);
+
+        let mut prog = Program::new();
+        prog.instructions = vec![ins(OpCode::Free, Register::Rd)];
+        vm.pc = 0;
+        let _ = vm.execute(prog);
+        assert_eq!(vm.heap.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_freed_error() -> Result<(),Error> {
+        let vm = create_vm(vec![
+            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
+            ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
+            ins(OpCode::Println, Register::Rd),
+            ins(OpCode::Free, Register::Rd),
+            ins(OpCode::Println, Register::Rd),
+        ], None);
+
+        assert!(vm.is_err());
+        let err = vm.unwrap_err();
+        assert_eq!(err.message, "Cannot set offset for allocation because memory has already been freed!");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_clear() -> Result<(),Error> {
+        let mut vm = create_vm(vec![
+            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
+            ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
+            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
+        ], None)?;
+
+        assert_eq!(1, vm.heap.len());
+        let allocations = vm.heap.get_allocations();
+        let real_allocation = {
+            let (first_allocation, _) = allocations.iter().nth(0).unwrap();
+            first_allocation.clone()
+        };
+
+        let derefed = unsafe {Box::from_raw(real_allocation)};
+        assert_eq!(vec!['h' as usize,'e' as usize,'y' as usize], derefed.to_vec());
+        let _ = Box::into_raw(derefed);
+        vm.heap.clear();
+        assert_eq!(0, vm.heap.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cast() -> Result<(),Error> {
+        let vm = create_vm(vec![
+            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(100)]),
+            ins_vec(OpCode::Cast, vec![Register::Rf.into(), Field::from("char")]),
+        ], None)?;
+
+        let field = vm.registers.rf;
+        assert_eq!(field, Field::C('d'));
 
         Ok(())
     }

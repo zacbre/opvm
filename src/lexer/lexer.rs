@@ -8,9 +8,7 @@ use crate::lexer::token::{Token, TokenType};
 use crate::vm::instruction::Instruction;
 use crate::vm::program::Program;
 
-pub struct Lexer {
-
-}
+pub struct Lexer;
 
 impl Lexer {
     pub fn new() -> Self {
@@ -120,10 +118,6 @@ fn build_token<'a>(item: IResult<&'a str,&str>, token_type: TokenType) -> IResul
     }
 }
 
-fn match_word(i: &str) -> IResult<&str, &str> {
-    take_till(|c| c == ' ' || c == ',' || c == '\n')(i)
-}
-
 fn get_quoted(i: &str) -> IResult<&str, &str> {
     delimited(
         alt((tag("'"), tag("\""))),
@@ -132,16 +126,16 @@ fn get_quoted(i: &str) -> IResult<&str, &str> {
     )(i)
 }
 
-fn match_quote(i: &str) -> IResult<&str, &str> {
+fn match_words_or_quotes(i: &str) -> IResult<&str, &str> {
     if i.starts_with('\'') || i.starts_with('"') {
         get_quoted(i)
     } else {
-        is_not(" ")(i)
+        take_till(|c| c == ',' || c == ' ' || c == '\n')(i)
     }
 }
 
 fn parse_words(i: &str) -> IResult<&str, Vec<&str>> {
-    separated_list0(tag(" "), alt((match_quote, match_word)))(i)
+    separated_list0(alt((tag(","),tag(" "))), match_words_or_quotes)(i)
 }
 
 #[cfg(test)]
@@ -211,7 +205,7 @@ mod test {
             #code        ; comment
                 .main ;comment
                     push 1; comment
-                    pop; comment
+                    pop                             ; comment
                     push 2;comment
                     pop;        comment
         "#;
@@ -257,5 +251,22 @@ mod test {
         assert_eq!(unwrapped.labels.len(), 1);
         println!("{:?}", unwrapped.instructions[0].operand);
         //assert_eq!(unwrapped.instructions[0].operand, 1);
+    }
+
+    #[test]
+    fn parse_words_can_parse_spaces_or_commas() {
+        let assm = r#"
+        #code
+            .main
+            mov ra,1
+            mov rb,1 a a a a
+        "#;
+
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        println!("{:?}", unwrapped.instructions);
+        assert_eq!(2, unwrapped.instructions.len());
+        assert_eq!(2, unwrapped.instructions[0].operand.len());
     }
 }

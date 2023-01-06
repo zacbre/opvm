@@ -1,9 +1,13 @@
 use std::fmt::{Display, Formatter};
+use nom::bytes::complete::{take_till, tag};
+use nom::IResult;
+use nom::sequence::delimited;
+use crate::vm::error::Error;
 use crate::vm::field::Field;
-use crate::vm::instruction::Instruction;
+use crate::vm::heap::Heap;
+use crate::vm::vm::Vm;
 
 macro_rules! flag_register {
-
     ($e:expr,bool) => {
         paste::item! {
             pub fn [<check_ $e >](&self) -> bool {
@@ -35,6 +39,20 @@ pub enum OffsetOperand {
     Default,
     Number(usize),
     Register(Register)
+}
+
+impl OffsetOperand {
+    pub fn resolve(&self, vm: &crate::vm::vm::Vm) -> Result<usize, Error> {
+        let result = match self {
+            &OffsetOperand::Number(n) => n,
+            &OffsetOperand::Register(r) => {
+                let data = vm.registers.get(r);
+                data.to_i_or_u(vm)?
+            },
+            _ => 0
+        };
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
@@ -83,56 +101,30 @@ impl Display for Register {
 }
 
 impl Register {
-    pub fn parse_with_comma(str: &str) -> Option<(Field, Field)> {
-        if str.contains(",") {
-            let split = str.split(",").collect::<Vec<&str>>();
-            let (first_register, first_offset_type) = Register::from(split[0]);
-            let field1 = if first_register == Register::Unknown {
-                Instruction::construct_field(split[0])
-            } else {
-                if first_offset_type == OffsetOperand::Default {
-                    Field::R(first_register)
-                } else {
-                    Field::RO(first_register, first_offset_type)
-                }
-            };
-
-            let (second_register, second_offset_type) = Register::from(split[1]);
-            let field2 = if second_register == Register::Unknown {
-                Instruction::construct_field(split[1])
-            } else {
-                if second_offset_type == OffsetOperand::Default {
-                    Field::R(second_register)
-                } else {
-                    Field::RO(second_register, second_offset_type)
-                }
-            };
-
-            return Some((field1, field2));
-        }
-
-        None
-    }
-
     pub fn from(value: &str) -> (Self, OffsetOperand) {
         let mut raw_register = value.to_string();
         let offset: usize;
         let mut offset_type = OffsetOperand::Default;
         if raw_register.contains("[") && raw_register.contains("]") {
-            // offset is - or +
-            let og = raw_register.split("[").collect::<Vec<&str>>();
-            let mut offset_value_raw = og[1].replace(" ", "");
-            offset_value_raw = offset_value_raw[..offset_value_raw.len()-1].to_string();
-            let register = Register::match_register(offset_value_raw.as_str());
-            offset_type = if register == Register::Unknown {
-                let offset_result = offset_value_raw.parse::<usize>();
-                offset = offset_result.unwrap();
-                OffsetOperand::Number(offset)
-            } else {
-                OffsetOperand::Register(register)
-            };
+            let register_name: IResult<&str,&str> = take_till(|c| c == '[')(value);
+            let (more, register_name) = register_name.unwrap();
+            raw_register = register_name.to_string();
+            let result: IResult<&str,&str> = delimited(
+                tag("["),
+                take_till(|c| c == ']'),
+                tag("]")
+            )(more);
 
-            raw_register = og[0].to_string();
+            let raw_offset = result.unwrap().1;
+            offset_type = match Register::match_register(raw_offset) {
+                Register::Unknown => {
+                    offset = raw_offset.parse::<usize>().unwrap();
+                    OffsetOperand::Number(offset)
+                }
+                r => {
+                    OffsetOperand::Register(r)
+                }
+            };
         }
         let register = Register::match_register(raw_register.as_str());
         (register, offset_type)
@@ -167,6 +159,7 @@ impl From<Register> for Field {
     }
 }
 
+#[derive(Debug)]
 pub struct Registers {
     pub ra: Field,
     pub rb: Field,
@@ -245,6 +238,18 @@ impl Registers {
             Register::R9 => self.r9 = f,
             _ => {}
         }
+    }
+
+    pub fn set_offset_for_p(vm: &mut Vm, register: Register, offset: OffsetOperand, f: Field) -> Result<(), Error> {
+        let data = vm.registers.get(register).to_p(&vm)?;
+        if !vm.heap.contains(data) {
+            return vm.error("Cannot set offset for allocation because memory has already been freed!".to_string(), Some(vec![f]));
+        }
+        let mut boxed = Heap::deref(data);
+        let number = offset.resolve(&vm)?;
+        boxed[number] = f.to_i_or_u(&vm)?;
+        Heap::reref(boxed);
+        Ok(())
     }
 
     pub fn get(&self, p0: Register) -> &Field {

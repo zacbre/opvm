@@ -30,6 +30,7 @@ pub enum OpCode {
     Igl,
     Alloc,
     Free,
+    Cast,
     //Load,
     //Store
 }
@@ -66,6 +67,7 @@ impl From<&str> for OpCode {
             "dup" => OpCode::Dup,
             "alloc" => OpCode::Alloc,
             "free" => OpCode::Free,
+            "cast" => OpCode::Cast,
             //"load" => OpCode::Load,
             //"store" => OpCode::Store,
             _ => OpCode::Igl
@@ -106,6 +108,7 @@ impl From<OpCode> for &str {
             OpCode::Igl => "igl",
             OpCode::Alloc => "alloc",
             OpCode::Free => "free",
+            OpCode::Cast => "cast",
             //OpCode::Load => "load",
             //OpCode::Store => "store"
         }

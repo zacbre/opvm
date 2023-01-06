@@ -1,3 +1,6 @@
+use std::char::ParseCharError;
+use std::num::ParseIntError;
+
 #[derive(Debug)]
 pub struct Error {
     pub message: String,
@@ -12,5 +15,17 @@ impl Error {
             stacktrace: stack,
             app_stack
         }
+    }
+}
+
+impl From<ParseIntError> for Error {
+    fn from(value: ParseIntError) -> Self {
+        Error::new(value.to_string(), vec![], vec![])
+    }
+}
+
+impl From<ParseCharError> for Error {
+    fn from(value: ParseCharError) -> Self {
+        Error::new(value.to_string(), vec![], vec![])
     }
 }

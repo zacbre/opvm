@@ -9,11 +9,6 @@ mod vm;
 fn main() {
     let lexer = Lexer::new();
     let val = lexer.process(r#"
-    #data
-        .multi " loops!"
-        .single " loop!"
-        .looptimes 10                ; amount of times we are going to loop
-        .done "done!"
     #code
         .main
             jmp @loop               ; jump to start of the program
@@ -40,17 +35,35 @@ fn main() {
             test rb,ra
             jl @loop
             jmp @alloc
+        .print                  ; // print("hello", 0, 5);
+            print r0[r1]        ; loop {
+            inc r1              ;   println!("{}", r0[r1]);
+            test r2,r1          ;   r1 += 1;
+            jl @print           ;   if r1 < r2 { break; }
+            println ""          ; }
+            ret
         .alloc
             alloc ra,6
-            mov ra[0] 'h'
-            mov ra[1] 'e'
-            mov ra[2] 'l'
-            mov ra[3] 'l'
-            mov ra[4] 'o'
-            mov ra[5] 0x0a
+            mov ra[0],h
+            mov ra[1],e
+            mov ra[2],l
+            mov ra[3],l
+            mov ra[4],o
+            mov ra[5],0x0a
             print ra
             free ra
+            alloc ra,1
+            mov r0,@xhello
+            mov r1,0
+            mov r2,5
+            call @print
             call @exit
+     #data
+        .multi " loops!"
+        .single " loop!"
+        .looptimes 10           ; amount of times we are going to loop
+        .done "doneeeee!"
+        .xhello "12345a"
     "#.to_string());
 
     let mut vm = Vm::new(true);

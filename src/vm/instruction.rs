@@ -33,18 +33,16 @@ impl Instruction {
         let mut stack: Stack<Field> = Stack::new();
         for i in 1..str.len() {
             let (register, offset_type) = Register::from(str[i]);
-            if register == Register::Unknown {
-                if let Some((field1, field2)) = Register::parse_with_comma(str[i]) {
-                    stack.push(field1);
-                    stack.push(field2);
-                } else {
+            match register {
+                Register::Unknown => {
                     stack.push(Instruction::construct_field(str[i]));
                 }
-            } else {
-                if offset_type == OffsetOperand::Default {
-                    stack.push(Field::R(register));
-                } else {
-                    stack.push(Field::RO(register, offset_type));
+                _ => {
+                    if offset_type == OffsetOperand::Default {
+                        stack.push(Field::R(register));
+                    } else {
+                        stack.push(Field::RO(register, offset_type));
+                    }
                 }
             }
         }
@@ -78,6 +76,12 @@ impl Instruction {
             Err(_) => (),
         }
 
+        if str.len() == 1 {
+            match str.parse::<char>() {
+                Ok(i) => { return Field::from(i); }
+                Err(_) => (),
+            }
+        }
 
         Field::from(str)
     }

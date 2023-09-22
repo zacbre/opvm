@@ -1,4 +1,3 @@
-use crate::vm::opcode;
 use crate::vm::opcode::OpCode;
 use crate::vm::field::Field;
 use crate::vm::register::{OffsetOperand, Register};
@@ -6,7 +5,7 @@ use crate::vm::stack::Stack;
 
 #[derive(Clone, Debug)]
 pub struct Instruction {
-    pub opcode: opcode::OpCode,
+    pub opcode: OpCode,
     pub operand: Stack<Field>
 }
 

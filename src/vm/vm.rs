@@ -10,8 +10,11 @@ use std::io::Write;
 use crate::vm::register::{OffsetOperand, Register, Registers};
 use crate::vm::stack::Stack;
 
+use super::builtin::{BuiltIn, self};
+
 #[derive(Debug)]
 pub struct Vm {
+    builtins: Vec<Box<dyn BuiltIn>>,
     instructions: Vec<Instruction>,
     labels: HashMap<String,usize>,
     data: HashMap<String, Field>,
@@ -26,6 +29,13 @@ pub struct Vm {
 impl Vm {
     pub fn new(reflection: bool) -> Self {
         Vm{
+            builtins: vec![
+                Box::new(builtin::Println), 
+                Box::new(builtin::Print),
+                Box::new(builtin::Concat),
+                Box::new(builtin::DateNowUnix),
+                Box::new(builtin::DateNow),
+            ],
             instructions: vec![],
             labels: HashMap::new(),
             data: HashMap::new(),
@@ -97,6 +107,9 @@ impl Vm {
                         &Field::U(i) if operand != OffsetOperand::Default => {
                             Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
                         }
+                        &Field::L(l) if operand != OffsetOperand::Default => {
+                            Registers::set_offset_for_p(self, r, operand, Field::from(l))?;
+                        }
                         Field::R(r2) => {
                             self.registers.set(r, self.registers.get(r2.clone()).clone());
                         }
@@ -153,7 +166,7 @@ impl Vm {
                         // box field, unbox and get offset?
                         if let Ok(po) = p.to_p(&self) {
                             if !self.heap.contains(po) {
-                                return self.error("Cannot set offset for allocation because memory has already been freed!".to_string(), Some(vec![p.clone()]));
+                                return self.error("Cannot print allocation because memory has already been freed!".to_string(), Some(vec![p.clone()]));
                             }
                             let b = Heap::deref(po);
                             let field = if offset_type == OffsetOperand::Default {
@@ -199,11 +212,21 @@ impl Vm {
                     self.stack.push(Field::from(input));
                 }
                 OpCode::Call => {
-                    self.call_stack.push(self.pc + 1);
                     let label = self.pop_operand(&mut instruction.operand)?;
-                    let result = self.jump_to_label(label, &self.labels)?;
-                    self.pc = result;
-                    continue;
+                    if self.labels.contains_key(&label.to_s(&self)?) {
+                        self.call_stack.push(self.pc + 1);
+                        let result = self.jump_to_label(label, &self.labels)?;
+                        self.pc = result;
+                        continue;
+                    } else {
+                        for func in &self.builtins {
+                            if func.get_name() == label.to_s(&self)? {
+                                let result = func.call(&mut self.registers, &mut self.stack);
+                                self.registers.r0 = result;
+                                break;
+                            }
+                        }
+                    }
                 }
                 OpCode::Ret => {
                     self.pc = self.pop_call_stack()?;
@@ -362,7 +385,11 @@ impl Vm {
                     let register = self.pop_operand(&mut instruction.operand)?;
                     let (r, _) = register.to_r(&self)?;
                     let field = self.registers.get(r);
-                    self.free_heap(field.to_p(&self)?);
+                    let p = field.to_p(&self)?;
+                    if !self.heap.contains(p) {
+                        return self.error("Cannot free because memory has already been freed!".to_string(), Some(vec![field.clone()]));
+                    }
+                    self.free_heap(p);
                 }
                 OpCode::Cast => {
                     let data = self.pop_operand(&mut instruction.operand)?;
@@ -403,7 +430,7 @@ impl Vm {
                         for item in f {
                             match item {
                                 Field::C(c) => {
-                                    assembled.push_str(format!("{}", c).as_str());
+                                    assembled.push_str(format!("{} ", c).as_str());
                                 }
                                 Field::I(i) => {
                                     assembled.push_str(format!("{} ", i).as_str());
@@ -417,6 +444,9 @@ impl Vm {
                                     }
                                     assembled.push_str(format!("{} ", s).as_str());
                                 },
+                                Field::R(r) | Field::RO(r, _) => {
+                                    assembled.push_str(format!("{},", r.to_string()).as_str());
+                                }
                                 _ => {
                                     assembled.push_str(format!("{} ", item.to_string()).as_str());
                                 }
@@ -447,7 +477,7 @@ impl Vm {
                 Ok(*n)
             },
             None => {
-                Err(Error::new("Cannot find label.".to_string(), vec![], vec![]))
+                Err(Error::new(format!("Cannot find label '{}'.", label), vec![], vec![]))
             }
         }
     }

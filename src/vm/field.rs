@@ -1,5 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+use chrono::{DateTime, Utc};
+
 use crate::vm::error::Error;
 use crate::vm::heap::Heap;
 use crate::vm::register::{OffsetOperand, Register};
@@ -29,6 +31,8 @@ impl CastType {
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Field {
     I(i64),
+    L(u128),
+    D(DateTime<Utc>),
     U(usize),
     C(char),
     S(String),
@@ -44,16 +48,6 @@ impl Default for Field {
 }
 
 impl Field {
-    pub fn to_i(&self, vm: &Vm) -> Result<i64, Error> {
-        match self {
-            &Field::I(num) => Ok(num),
-            _ => {
-                let err = vm.error("Value is not an int!".to_string(), Some(vec![self.clone()]));
-                Err(err.unwrap_err())
-            }
-        }
-    }
-
     pub fn to_str(&self, vm: &Vm) -> Result<&str, Error> {
         match self {
             &Field::S(ref s) => Ok(s),
@@ -117,6 +111,16 @@ impl Field {
         }
     }
 
+    pub fn to_l(&self, vm: &Vm) -> Result<u128, Error> {
+        match self {
+            &Field::L(l) => Ok(l),
+            _ => {
+                let err = vm.error("Value is not a u128!".to_string(), Some(vec![self.clone()]));
+                Err(err.unwrap_err())
+            }
+        }
+    }
+
     pub fn cast(self, vm: &Vm, cast_type: CastType, ro: OffsetOperand) -> Result<Field, Error> {
         if cast_type == CastType::None {
             return Ok(self);
@@ -141,6 +145,22 @@ impl Field {
                     CastType::CastToI64 => Ok(Field::from(u as i64)),
                     CastType::CastToUsize => Ok(Field::from(u)),
                     CastType::CastToString => Ok(Field::from(u.to_string())),
+                    _ => {
+                        Err(vm.error(format!("Cannot cast '{:?}' to: {:?}", &self, cast_type), Some(vec![self.clone()])).unwrap_err())
+                    }
+                }
+            }
+            Field::D(d) => {
+                match cast_type {
+                    CastType::CastToString => Ok(Field::from(d.to_string())),
+                    _ => {
+                        Err(vm.error(format!("Cannot cast '{:?}' to: {:?}", &self, cast_type), Some(vec![self.clone()])).unwrap_err())
+                    }
+                }
+            }
+            Field::L(l) => {
+                match cast_type {
+                    CastType::CastToString => Ok(Field::from(l.to_string())),
                     _ => {
                         Err(vm.error(format!("Cannot cast '{:?}' to: {:?}", &self, cast_type), Some(vec![self.clone()])).unwrap_err())
                     }
@@ -221,6 +241,12 @@ impl From<char> for Field {
     }
 }
 
+impl From<u128> for Field {
+    fn from(i: u128) -> Self {
+        Field::L(i)
+    }
+}
+
 impl From<i64> for Field {
     fn from(i: i64) -> Self {
         Field::I(i)
@@ -232,6 +258,13 @@ impl From<i32> for Field {
         Field::I(i as i64)
     }
 }
+
+impl From<DateTime<Utc>> for Field {
+    fn from(d: DateTime<Utc>) -> Self {
+        Field::D(d)
+    }
+}
+
 
 impl From<String> for Field {
     fn from(s: String) -> Self {
@@ -254,7 +287,9 @@ impl From<*mut [usize]> for Field {
 impl Display for Field {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            &Field::D(d) => write!(f, "{}", d),
             &Field::I(i) => write!(f, "{}", i),
+            &Field::L(l) => write!(f, "{}", l),
             &Field::U(u) => write!(f, "{}", u),
             &Field::P(p) => write!(f, "{:?}", p),
             &Field::C(c) => write!(f, "{}", c),

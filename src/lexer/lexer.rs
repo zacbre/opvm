@@ -1,7 +1,7 @@
 use nom::branch::alt;
 use nom::IResult;
 use nom::bytes::complete::*;
-use nom::multi::{separated_list0};
+use nom::multi::{separated_list0, many0, many1};
 use nom::sequence::{delimited, preceded, terminated};
 use nom::combinator::{eof, opt, peek};
 use crate::lexer::token::{Token, TokenType};
@@ -12,7 +12,7 @@ pub struct Lexer;
 
 impl Lexer {
     pub fn new() -> Self {
-        Lexer{}
+        Lexer {}
     }
 
     pub fn process(&self, input: String) -> Option<Program> {
@@ -42,12 +42,12 @@ impl Lexer {
                         let parsed = parse_words(&to_parse);
                         match parsed {
                             Ok((_, v)) => {
-                                program.data.insert("@".to_owned()+v[0], Instruction::construct_field(v[1]));
+                                program.data.insert("_".to_owned() + v[0], Instruction::construct_field(v[1]));
                             }
                             Err(e) => println!("Error: {:?}", e)
                         }
                     } else {
-                        program.labels.insert("@".to_owned() + &token.content.unwrap(), pc);
+                        program.labels.insert("_".to_owned() + &token.content.unwrap(), pc);
                     }
                 }
                 TokenType::Instruction => {
@@ -70,11 +70,15 @@ impl Lexer {
     }
 }
 
-fn match_newline(i: &str) -> IResult<&str,&str> {
+fn match_newline(i: &str) -> IResult<&str, &str> {
     take_till(|c| c == '\n' || c == ';')(i)
 }
 
-fn match_whitespace(i: &str) -> IResult<&str,&str> {
+fn get_before_colon(i: &str) -> IResult<&str, &str> {
+    take_till(|c| c == ':' || c == '\n')(i)
+}
+
+fn match_whitespace(i: &str) -> IResult<&str, &str> {
     take_till(|c| c != ' ' && c != '\t')(i)
 }
 
@@ -91,11 +95,15 @@ fn match_comments(i: &str) -> IResult<&str, Token> {
 }
 
 fn match_directive(i: &str) -> IResult<&str, Token> {
-    build_token(terminated(preceded(match_whitespace, preceded(tag("#"), match_newline)), opt(match_comments))(i), TokenType::Directive)
+    build_token(terminated(preceded(match_whitespace, preceded(tag("section ."), match_newline)), opt(match_comments))(i), TokenType::Directive)
 }
 
 fn match_label(i: &str) -> IResult<&str, Token> {
-    build_token(terminated(preceded(match_whitespace, preceded(tag("."), match_newline)), opt(match_comments))(i), TokenType::Label)
+    build_token(terminated(preceded(match_whitespace, preceded(tag("_"), get_before_colon)), preceded(tag(":"), alt((match_comments, match_blank_line))))(i), TokenType::Label)
+}
+
+fn match_label_with_value(i: &str) -> IResult<&str, Token> {
+    build_token_vec(terminated(preceded(match_whitespace, preceded(tag("_"), parse_words_label_values)), alt((match_comments, get_quoted_label, match_blank_line)))(i), TokenType::Label)
 }
 
 fn match_opcode(i: &str) -> IResult<&str, Token> {
@@ -103,15 +111,31 @@ fn match_opcode(i: &str) -> IResult<&str, Token> {
 }
 
 fn handle_lines(i: &str) -> IResult<&str, Vec<Token>> {
-    separated_list0(tag("\n"), alt((match_comments, match_empty_line, match_blank_line, match_directive, match_label, match_opcode)))(i)
+    separated_list0(tag("\n"), alt((match_comments, match_empty_line, match_blank_line, match_directive, match_label, match_label_with_value, match_opcode)))(i)
 }
 
-fn build_token<'a>(item: IResult<&'a str,&str>, token_type: TokenType) -> IResult<&'a str, Token> {
+fn get_quoted_label(i: &str) -> IResult<&str, Token> {
+    build_token(match_words_or_quotes(i), TokenType::Label)
+}
+
+fn build_token<'a>(item: IResult<&'a str, &str>, token_type: TokenType) -> IResult<&'a str, Token> {
     match item {
         Ok((i, v)) => {
-            Ok((i, Token{
+            Ok((i, Token {
                 content: Some(v.trim().to_string()),
-                token_type
+                token_type,
+            }))
+        }
+        Err(e) => Err(e)
+    }
+}
+
+fn build_token_vec<'a>(item: IResult<&'a str, Vec<&str>>, token_type: TokenType) -> IResult<&'a str, Token> {
+    match item {
+        Ok((i, v)) => {
+            Ok((i, Token {
+                content: Some(v.join(" ")),
+                token_type,
             }))
         }
         Err(e) => Err(e)
@@ -130,12 +154,24 @@ fn match_words_or_quotes(i: &str) -> IResult<&str, &str> {
     if i.starts_with('\'') || i.starts_with('"') {
         get_quoted(i)
     } else {
-        take_till(|c| c == ',' || c == ' ' || c == '\n')(i)
+        take_till(|c| c == ',' || c == ' ' || c == ':' || c == '\n')(i)
+    }
+}
+
+fn match_quotes(i: &str) -> IResult<&str, &str> {
+    if i.starts_with('\'') || i.starts_with('"') {
+        preceded(alt((peek(tag("'")), peek(tag("\"")))), take_till(|c| c == ';' || c == '\n'))(i)
+    } else {
+        take_till(|c| c == ',' || c == ' ' || c == ':' || c == '\n')(i)
     }
 }
 
 fn parse_words(i: &str) -> IResult<&str, Vec<&str>> {
-    separated_list0(alt((tag(","),tag(" "))), match_words_or_quotes)(i)
+    separated_list0(alt((tag(","), tag(" "))), match_words_or_quotes)(i)
+}
+
+fn parse_words_label_values(i: &str) -> IResult<&str, Vec<&str>> {
+    separated_list0(alt((tag(":"), tag(" "), peek(tag("\"")), peek(tag("'")))), terminated(preceded(opt(match_whitespace), match_quotes), opt(match_comments)))(i)
 }
 
 #[cfg(test)]
@@ -199,11 +235,11 @@ mod test {
     #[test]
     fn can_have_comments_on_lines() {
         let assm = r#"
-            #data; my comment
-                .hi "ayy";comment
-                .xdd 2 ; comment
-            #code        ; comment
-                .main ;comment
+            section .data; my comment
+                _hi: "ayy";comment
+                _xdd: 2 ; comment
+            section .code        ; comment
+                _main: ;comment
                     push 1; comment
                     pop                             ; comment
                     push 2;comment
@@ -214,9 +250,9 @@ mod test {
         let unwrapped = instructions.unwrap();
         assert_eq!(unwrapped.instructions.len(), 4);
         assert_eq!(unwrapped.labels.len(), 1);
-        assert_eq!(*unwrapped.data.get("@hi").unwrap(), Field::from("ayy"));
-        assert_eq!(*unwrapped.data.get("@xdd").unwrap(), Field::from(2));
-        assert_eq!(*unwrapped.labels.get("@main").unwrap(), 0);
+        assert_eq!(*unwrapped.data.get("_hi").unwrap(), Field::from("ayy"));
+        assert_eq!(*unwrapped.data.get("_xdd").unwrap(), Field::from(2));
+        assert_eq!(*unwrapped.labels.get("_main").unwrap(), 0);
     }
 
     #[test]

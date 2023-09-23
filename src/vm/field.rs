@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::types::Type;
+use crate::types::{Type, Object};
 
 use super::register::Register;
 
@@ -18,7 +18,7 @@ impl Field {
             Type::Bool(b) => Field(Type::Bool(*b)),
             Type::Pointer(p) => Field(Type::Pointer(*p)),
             Type::Register(r) => Field(Type::Register(*r)),
-            //Type::Object(o) => Field(Type::Object()),
+            Type::Object(o) => Field(Type::Object((*o).clone())),
             _ => Field::default()
         }
     }
@@ -136,6 +136,12 @@ impl From<Register> for Field {
     }
 }
 
+impl From<Box<dyn Object>> for Field {
+    fn from(o: Box<dyn Object>) -> Self {
+        Field(Type::Object(o))
+    }
+}
+
 impl Display for Field {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -149,6 +155,7 @@ impl Display for Field {
             &Field(Type::Char(c)) => write!(f, "{}", c),
             &Field(Type::String(ref s)) => write!(f, "{}", s),
             &Field(Type::Register(r)) => write!(f, "{:?}", r),
+            &Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
             _ => write!(f, "{:?}", self),
         }
     }

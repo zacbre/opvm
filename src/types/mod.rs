@@ -3,7 +3,11 @@ use core::fmt::Debug;
 
 use crate::vm::register::Register;
 
+pub mod date;
+pub mod duration;
+
 pub trait Object: Display + Debug{
+    fn clone(&self) -> Box<dyn Object>;
 }
 
 #[derive(Debug)]
@@ -19,18 +23,4 @@ pub enum Type {
     Pointer(*mut [usize]),
     Register(Register),
     Object(Box<dyn Object>),
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct Date(chrono::DateTime<chrono::Utc>);
-impl Object for Date {}
-impl Date {
-    pub fn format(&self, fmt: &str) -> String {
-        self.0.format(fmt).to_string()
-    }
-}
-impl Display for Date {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", chrono::Utc::now().to_rfc3339())
-    }
 }

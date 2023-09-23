@@ -1,11 +1,5 @@
 use std::fmt::{Display, Formatter};
-use nom::bytes::complete::{take_till, tag};
-use nom::IResult;
-use nom::sequence::delimited;
-use crate::vm::error::Error;
-use crate::vm::field::Field;
-use crate::vm::heap::Heap;
-use crate::vm::vm::Vm;
+use super::field::Field;
 
 macro_rules! flag_register {
     ($e:expr,bool) => {

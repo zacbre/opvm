@@ -519,6 +519,7 @@ impl Vm {
     fn get_fields_from_registers_or_data(&mut self, instruction: &mut Instruction) -> Result<(Register, usize, usize), Error> {
         let register1 = self.pop_operand(&mut instruction.operand)?;
         let register2 = self.pop_operand(&mut instruction.operand)?;
+        // todo: determine if 2 items can be subtracted from each other?
         let u1 = self.get_usize_from_register(&register1)?;
         let u2 = self.get_usize_from_register(&register2)?;
         return Ok((register2.to_r(&self)?, u1, u2));

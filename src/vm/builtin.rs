@@ -1,5 +1,6 @@
 use std::{fmt::Debug, time::{SystemTime, UNIX_EPOCH}};
-use chrono::Utc;
+
+use crate::types::date::Date;
 
 use super::{register::Registers, field::Field, stack::Stack};
 
@@ -62,9 +63,8 @@ impl BuiltIn for DateNowUnix {
 #[derive(Debug)]
 pub struct DateNow;
 impl BuiltIn for DateNow {
-    fn call(&self, registers: &mut Registers, _: &mut Stack<Field>) -> Field {
-        //Field::from(Utc::now())
-        Field::default()
+    fn call(&self, _: &mut Registers, _: &mut Stack<Field>) -> Field {
+        Field::from(Date::new())
     }
 
     fn get_name(&self) -> &str {

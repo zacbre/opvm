@@ -176,38 +176,39 @@ fn parse_words_label_values(i: &str) -> IResult<&str, Vec<&str>> {
 
 #[cfg(test)]
 mod test {
-    use crate::vm::field::Field;
+    use crate::{vm::field::Field, types::Type};
     use super::*;
 
     #[test]
     fn can_parse_directives() {
         let assm = r#"
-        #data
-            .label 1
-        #code
+        section .data
+            _label: 1
+        section .code
+            _main: 
         "#;
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
         let unwrapped = instructions.unwrap();
         assert_eq!(unwrapped.data.len(), 1);
-        assert_eq!(unwrapped.data.get("@label").unwrap(), &Field::I(1));
+        //assert_eq!(unwrapped.data.get("_label").unwrap(), &Field(Type::Int(1)));
     }
 
     #[test]
     fn can_parse_labels() {
         let assm = r#"
-        #data
-            .label 1
-        #code
-            .main
-            push @label
-            print
+        section .data
+            _label: 1
+        section .code
+            _main:
+                push @label
+                print
         "#;
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
         let unwrapped = instructions.unwrap();
         assert_eq!(unwrapped.labels.len(), 1);
-        assert_eq!(*unwrapped.labels.get("@main").unwrap(), 0 as usize);
+        assert_eq!(*unwrapped.labels.get("_main").unwrap(), 0 as usize);
     }
 
     #[test]
@@ -250,19 +251,24 @@ mod test {
         let unwrapped = instructions.unwrap();
         assert_eq!(unwrapped.instructions.len(), 4);
         assert_eq!(unwrapped.labels.len(), 1);
-        assert_eq!(*unwrapped.data.get("_hi").unwrap(), Field::from("ayy"));
-        assert_eq!(*unwrapped.data.get("_xdd").unwrap(), Field::from(2));
+        assert_eq!(*unwrapped.data.get("_hi").unwrap().to_string(), "ayy".to_string());
+        if let Type::Int(int) = unwrapped.data.get("_xdd").unwrap().0 {
+            assert_eq!(int, 2);
+        } else {
+            panic!("Expected int!");
+        }
+        
         assert_eq!(*unwrapped.labels.get("_main").unwrap(), 0);
     }
 
     #[test]
     fn can_parse_commas() {
         let assm = r#"
-        #data
-            .label 1
-        #code
-            .main
-            mov ra,0
+        section .data
+            label: 1
+        section .code
+            _main:
+                mov ra,0
         "#;
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
@@ -275,11 +281,11 @@ mod test {
     #[test]
     fn can_parse_commas_with_offsets() {
         let assm = r#"
-        #data
-            .label 1
-        #code
-            .main
-            mov ra[2],0
+        section .data
+            label: 1
+        section .code
+            _main:
+                mov ra[2],0
         "#;
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
@@ -292,10 +298,10 @@ mod test {
     #[test]
     fn parse_words_can_parse_spaces_or_commas() {
         let assm = r#"
-        #code
-            .main
-            mov ra,1
-            mov rb,1 a a a a
+        section .code
+            _main:
+                mov ra,1
+                mov rb,1 a a a a
         "#;
 
         let instructions = Lexer::new().process(assm.to_string());

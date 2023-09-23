@@ -5,6 +5,7 @@ use crate::vm::vm::Vm;
 
 mod lexer;
 mod vm;
+mod types;
 
 fn main() {
     let lexer = Lexer::new();
@@ -38,16 +39,20 @@ fn main() {
             mov rd,r0
             call __println
             call __date_now_unix
-            sub r1,r0
+            sub r0,r1
+            mov r1,r0
             mov rd,_took
             call __print
             mov rd,r1
+            call __print
+            mov rd,_secs
             call __println
     section .data
         _wife_name: "Katie"
         _space: " "
         _done: "Done at "
         _took: "Took "
+        _secs: " seconds"
         _loop_times: 100000
     "#.to_string());
 

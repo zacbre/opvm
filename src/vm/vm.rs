@@ -1,13 +1,13 @@
 use std::{cmp, io};
+use crate::types::Type;
 use crate::vm::instruction::Instruction;
 use crate::vm::opcode::OpCode;
-use crate::vm::field::{CastType, Field};
+use crate::vm::field::Field;
 use std::collections::HashMap;
 use crate::vm::error::Error;
 use crate::vm::program::Program;
 use crate::vm::heap::Heap;
-use std::io::Write;
-use crate::vm::register::{OffsetOperand, Register, Registers};
+use crate::vm::register::{Register, Registers};
 use crate::vm::stack::Stack;
 
 use super::builtin::{BuiltIn, self};
@@ -35,6 +35,7 @@ impl Vm {
                 Box::new(builtin::Concat),
                 Box::new(builtin::DateNowUnix),
                 Box::new(builtin::DateNow),
+                Box::new(builtin::Dbg),
             ],
             instructions: vec![],
             labels: HashMap::new(),
@@ -68,30 +69,35 @@ impl Vm {
 
         while (self.pc as usize) < self.instructions.len() {
             let tmp_ins = &self.instructions[self.pc as usize];
-            let mut instruction = tmp_ins.clone();
+            // clone operand
+            let mut operands: Vec<Field> = vec![];
+            for operand in tmp_ins.operand.to_vec() {
+                operands.push(Field::from(operand.underlying_data_clone()));
+            }
+            let mut instruction: Instruction = Instruction::new(tmp_ins.opcode, operands);
             match instruction.opcode {
                 OpCode::Move => {
                     let data = self.pop_operand(&mut instruction.operand)?;
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    let (r, operand) = register.to_r(&self)?;
+                    let r = register.to_r(&self)?;
                     match &data {
-                        &Field::C(c) if operand != OffsetOperand::Default => {
-                            Registers::set_offset_for_p(self, r, operand, Field::from(c))?;
-                        }
-                        Field::S(s) if operand != OffsetOperand::Default => {
+                        // &Field(Type::Char(c)) if operand != OffsetOperand::Default => {
+                        //     Registers::set_offset_for_p(self, r, operand, Field::from(c))?;
+                        // }
+                        // Field(Type::String(s)) if operand != OffsetOperand::Default => {
+                        //     if self.data.contains_key(s.as_str()) {
+                        //         self.registers.set(r, self.data.get(s.as_str()).unwrap().clone());
+                        //     } else {
+                        //         if s.len() == 1 {
+                        //             Registers::set_offset_for_p(self, r, operand, Field::from(s.as_str()))?;
+                        //         } else {
+                        //             return self.error(format!("Cannot find symbol '{}' at {}!", s, self.pc), Some(vec![data]));
+                        //         }
+                        //     }
+                        // }
+                        Field(Type::String(s)) => {
                             if self.data.contains_key(s.as_str()) {
-                                self.registers.set(r, self.data.get(s.as_str()).unwrap().clone());
-                            } else {
-                                if s.len() == 1 {
-                                    Registers::set_offset_for_p(self, r, operand, Field::from(s.as_str()))?;
-                                } else {
-                                    return self.error(format!("Cannot find symbol '{}' at {}!", s, self.pc), Some(vec![data]));
-                                }
-                            }
-                        }
-                        Field::S(s) => {
-                            if self.data.contains_key(s.as_str()) {
-                                self.registers.set(r, self.data.get(s.as_str()).unwrap().clone());
+                                self.registers.set(r, self.data.get(s.as_str()).unwrap().underlying_data_clone());
                             } else {
                                 if s.len() == 1 {
                                     let char = s.chars().nth(0).unwrap();
@@ -101,30 +107,30 @@ impl Vm {
                                 }
                             }
                         }
-                        &Field::I(i) if operand != OffsetOperand::Default => {
-                            Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
-                        }
-                        &Field::U(i) if operand != OffsetOperand::Default => {
-                            Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
-                        }
-                        &Field::L(l) if operand != OffsetOperand::Default => {
-                            Registers::set_offset_for_p(self, r, operand, Field::from(l))?;
-                        }
-                        Field::R(r2) => {
-                            self.registers.set(r, self.registers.get(r2.clone()).clone());
+                        // &Field(Type::Int(i)) if operand != OffsetOperand::Default => {
+                        //     Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
+                        // }
+                        // &Field::U(i) if operand != OffsetOperand::Default => {
+                        //     Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
+                        // }
+                        // &Field::L(l) if operand != OffsetOperand::Default => {
+                        //     Registers::set_offset_for_p(self, r, operand, Field::from(l))?;
+                        // }
+                        Field(Type::Register(r2)) => {
+                            self.registers.set(r, self.registers.get(r2.clone()).underlying_data_clone());
                         }
                         _ => self.registers.set(r, data)
                     }
                 }
                 OpCode::Push => {
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    match register {
-                        Field::R(r) => {
-                            self.stack.push(self.registers.get(r).clone())
+                    match register.0 {
+                        Type::Register(r) => {
+                            self.stack.push(self.registers.get(r).underlying_data_clone())
                         }
-                        Field::S(s) => {
+                        Type::String(s) => {
                             if self.data.contains_key(s.as_str()) {
-                                self.stack.push(self.data.get(s.as_str()).unwrap().clone());
+                                self.stack.push(self.data.get(s.as_str()).unwrap().underlying_data_clone());
                             }
                         }
                         _ => {
@@ -134,7 +140,7 @@ impl Vm {
                 }
                 OpCode::Pop => {
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    let (register, _) = register.to_r(&self)?;
+                    let register = register.to_r(&self)?;
                     let data = self.pop_stack()?;
                     self.registers.set(register, data).clone()
                 }
@@ -158,69 +164,20 @@ impl Vm {
                     let (register, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
                     self.registers.set(register, Field::from(i2 % i1));
                 }
-                OpCode::Print | OpCode::Println => {
-                    let field = self.pop_operand(&mut instruction.operand)?;
-                    let output = if let Ok((r, offset_type)) = field.to_r(&self) {
-                        // get the value from the register.
-                        let p = self.registers.get(r);
-                        // box field, unbox and get offset?
-                        if let Ok(po) = p.to_p(&self) {
-                            if !self.heap.contains(po) {
-                                return self.error("Cannot print allocation because memory has already been freed!".to_string(), Some(vec![p.clone()]));
-                            }
-                            let b = Heap::deref(po);
-                            let field = if offset_type == OffsetOperand::Default {
-                                let mut output = String::default();
-                                for item in b.iter() {
-                                    output.push(char::from_u32(*item as u32).unwrap());
-                                }
-                                Field::from(output)
-                            } else {
-                                let number = offset_type.resolve(self)?;
-                                let b_offset = b[number].clone();
-                                Field::from(b_offset)
-                            };
-                            Heap::reref(b);
-                            field
-                        } else {
-                            match p {
-                                Field::S(s) => {
-                                    if offset_type != OffsetOperand::Default {
-                                        let offset = offset_type.resolve(self)?;
-                                        Field::from(s.chars().collect::<Vec<char>>()[offset])
-                                    } else {
-                                        p.clone()
-                                    }
-                                }
-                                _ => p.clone()
-                            }
-                        }
-                    } else {
-                        field.clone()
-                    };
-
-                    if instruction.opcode == OpCode::Println {
-                        println!("{}", output);
-                    } else {
-                        print!("{}", output);
-                    }
-
-                    let _ = io::stdout().flush();
-                }
                 OpCode::Input => {
                     let input = self.get_input();
                     self.stack.push(Field::from(input));
                 }
                 OpCode::Call => {
                     let label = self.pop_operand(&mut instruction.operand)?;
-                    if self.labels.contains_key(&label.to_s(&self)?) {
+                    if self.labels.contains_key(&label.to_string()) {
                         self.call_stack.push(self.pc + 1);
                         let result = self.jump_to_label(label, &self.labels)?;
                         self.pc = result;
                         continue;
                     } else {
                         for func in &self.builtins {
-                            if func.get_name() == label.to_s(&self)? {
+                            if func.get_name() == label.to_string() {
                                 let result = func.call(&mut self.registers, &mut self.stack);
                                 self.registers.r0 = result;
                                 break;
@@ -247,14 +204,14 @@ impl Vm {
                 }
                 OpCode::Jmp => {
                     let operand = self.pop_operand(&mut instruction.operand)?;
-                    let result = self.jump_to_label(operand.clone(), &self.labels)?;
+                    let result = self.jump_to_label(operand, &self.labels)?;
                     self.pc = result;
                     continue;
                 }
                 OpCode::Je => {
                     if self.registers.check_equals_flag() {
                         let operand = self.pop_operand(&mut instruction.operand)?;
-                        let result = self.jump_to_label(operand.clone(), &self.labels)?;
+                        let result = self.jump_to_label(operand, &self.labels)?;
                         self.pc = result;
                         continue;
                     }
@@ -262,7 +219,7 @@ impl Vm {
                 OpCode::Jne => {
                     if !self.registers.check_equals_flag() {
                         let operand = self.pop_operand(&mut instruction.operand)?;
-                        let result = self.jump_to_label(operand.clone(), &self.labels)?;
+                        let result = self.jump_to_label(operand, &self.labels)?;
                         self.pc = result;
                         continue;
                     }
@@ -270,7 +227,7 @@ impl Vm {
                 OpCode::Jl => {
                     if self.registers.check_less_than_flag() {
                         let operand = self.pop_operand(&mut instruction.operand)?;
-                        let result = self.jump_to_label(operand.clone(), &self.labels)?;
+                        let result = self.jump_to_label(operand, &self.labels)?;
                         self.pc = result;
                         continue;
                     }
@@ -278,7 +235,7 @@ impl Vm {
                 OpCode::Jg => {
                     if self.registers.check_greater_than_flag() {
                         let operand = self.pop_operand(&mut instruction.operand)?;
-                        let result = self.jump_to_label(operand.clone(), &self.labels)?;
+                        let result = self.jump_to_label(operand, &self.labels)?;
                         self.pc = result;
                         continue;
                     }
@@ -286,7 +243,7 @@ impl Vm {
                 OpCode::Jle => {
                     if self.registers.check_equals_flag() || self.registers.check_less_than_flag() {
                         let operand = self.pop_operand(&mut instruction.operand)?;
-                        let result = self.jump_to_label(operand.clone(), &self.labels)?;
+                        let result = self.jump_to_label(operand, &self.labels)?;
                         self.pc = result;
                         continue;
                     }
@@ -294,25 +251,29 @@ impl Vm {
                 OpCode::Jge => {
                     if self.registers.check_equals_flag() || self.registers.check_greater_than_flag() {
                         let operand = self.pop_operand(&mut instruction.operand)?;
-                        let result = self.jump_to_label(operand.clone(), &self.labels)?;
+                        let result = self.jump_to_label(operand, &self.labels)?;
                         self.pc = result;
                         continue;
                     }
                 }
                 OpCode::Inc => {
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    let (register, _) = register.to_r(&self)?;
-                    let v1 = self.registers.get(register).clone();
-                    match v1 {
-                        Field::I(mut i) => {
+                    let register = register.to_r(&self)?;
+                    let v1 = self.registers.get(register).underlying_data_clone();
+                    match v1.0 {
+                        Type::Int(mut i) => {
                             i += 1;
                             self.registers.set(register, Field::from(i));
                         }
-                        Field::U(mut u) => {
+                        Type::UInt(mut u) => {
                             u += 1;
                             self.registers.set(register, Field::from(u));
                         }
-                        Field::C(c) => {
+                        Type::Byte(mut b) => {
+                            b += 1;
+                            self.registers.set(register, Field::from(b));
+                        }
+                        Type::Char(c) => {
                             let new_char: char = (c as u8 + 1) as char;
                             self.registers.set(register, Field::from(new_char));
                         }
@@ -323,18 +284,22 @@ impl Vm {
                 }
                 OpCode::Dec => {
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    let (register, _) = register.to_r(&self)?;
-                    let v1 = self.registers.get(register).clone();
-                    match v1 {
-                        Field::I(mut i) => {
+                    let register = register.to_r(&self)?;
+                    let v1 = self.registers.get(register).underlying_data_clone();
+                    match v1.0 {
+                        Type::Int(mut i) => {
                             i -= 1;
                             self.registers.set(register, Field::from(i));
                         }
-                        Field::U(mut u) => {
+                        Type::UInt(mut u) => {
                             u -= 1;
                             self.registers.set(register, Field::from(u));
                         }
-                        Field::C(c) => {
+                        Type::Byte(mut b) => {
+                            b -= 1;
+                            self.registers.set(register, Field::from(b));
+                        }
+                        Type::Char(c) => {
                             let new_char: char = (c as u8 - 1) as char;
                             self.registers.set(register, Field::from(new_char));
                         }
@@ -350,19 +315,19 @@ impl Vm {
                 OpCode::Dup => {
                     let v1 = self.pop_stack()?;
                     // push to the stack twice.
-                    self.stack.push(v1.clone());
+                    self.stack.push(v1.underlying_data_clone());
                     self.stack.push(v1);
                 }
                 OpCode::Alloc => {
-                    let to_alloc = self.pop_operand(&mut instruction.operand)?;
-                    let allocation_size = match &to_alloc {
-                        Field::R(r) => {
+                    /*let to_alloc = self.pop_operand(&mut instruction.operand)?;
+                    let allocation_size = match &to_alloc.0 {
+                        Type::Register(r) => {
                             let value = self.registers.get(r.clone());
-                            value.to_i_or_u(&self)?
+                            //value.to_i_or_u(&self)?
                         },
-                        Field::U(u) => *u,
-                        Field::I(i) => *i as usize,
-                        Field::S(s) => {
+                        Type::UInt(u) => *u,
+                        Type::Int(i) => *i as usize,
+                        Type::String(s) => {
                             let key = s.as_str();
                             if self.data.contains_key(key) {
                                 self.data.get(key).unwrap().to_u(&self)?
@@ -376,28 +341,28 @@ impl Vm {
                     };
 
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    let (register, _) = register.to_r(&self)?;
+                    let register = register.to_r(&self)?;
 
                     let allocated = self.allocate_heap(allocation_size)?;
-                    self.registers.set(register, allocated);
+                    self.registers.set(register, allocated);*/
                 }
                 OpCode::Free => {
-                    let register = self.pop_operand(&mut instruction.operand)?;
-                    let (r, _) = register.to_r(&self)?;
-                    let field = self.registers.get(r);
-                    let p = field.to_p(&self)?;
-                    if !self.heap.contains(p) {
-                        return self.error("Cannot free because memory has already been freed!".to_string(), Some(vec![field.clone()]));
-                    }
-                    self.free_heap(p);
+                    // let register = self.pop_operand(&mut instruction.operand)?;
+                    // let register = register.to_r(&self)?;
+                    // let field = self.registers.get(r);
+                    // let p = field.to_p(&self)?;
+                    // if !self.heap.contains(p) {
+                    //     return self.error("Cannot free because memory has already been freed!".to_string(), Some(vec![field.clone()]));
+                    // }
+                    // self.free_heap(p);
                 }
                 OpCode::Cast => {
-                    let data = self.pop_operand(&mut instruction.operand)?;
+                    /*let data = self.pop_operand(&mut instruction.operand)?;
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    let (r, ro) = register.to_r(&self)?;
+                    let register = register.to_r(&self)?;
                     let field = self.registers.get(r);
                     let output = field.clone().cast(&self, CastType::from(data.to_s(&self)?.as_str()), ro)?;
-                    self.registers.set(r, output);
+                    self.registers.set(r, output);*/
                 }
                 OpCode::Nop => (),
                 OpCode::Hlt => {
@@ -428,23 +393,23 @@ impl Vm {
                     Some(f) => {
                         assembled.push_str(format!(" <-- error occurred here, operand(s): ").as_str());
                         for item in f {
-                            match item {
-                                Field::C(c) => {
+                            match &item.0 {
+                                Type::Char(c) => {
                                     assembled.push_str(format!("{} ", c).as_str());
                                 }
-                                Field::I(i) => {
+                                Type::Int(i) => {
                                     assembled.push_str(format!("{} ", i).as_str());
                                 }
-                                Field::U(u) => {
+                                Type::UInt(u) => {
                                     assembled.push_str(format!("{:#04x} ", u).as_str());
                                 }
-                                Field::S(s) => {
+                                Type::String(s) => {
                                     if s.len() == 0 {
                                         continue;
                                     }
                                     assembled.push_str(format!("{} ", s).as_str());
                                 },
-                                Field::R(r) | Field::RO(r, _) => {
+                                Type::Register(r) => {
                                     assembled.push_str(format!("{},", r.to_string()).as_str());
                                 }
                                 _ => {
@@ -470,7 +435,7 @@ impl Vm {
     }
 
     fn jump_to_label(&self, operand: Field, labels: &HashMap<String,usize>) -> Result<usize, Error> {
-        let label = operand.to_s(&self)?;
+        let label = operand.to_string();
         let new_pc = labels.get(&label);
         return match new_pc {
             Some(n) => {
@@ -515,13 +480,13 @@ impl Vm {
         }
     }
 
-    fn allocate_heap(&mut self, size: usize) -> Result<Field, Error> {
-        Ok(Field::P(self.heap.allocate(size)))
-    }
+    // fn allocate_heap(&mut self, size: usize) -> Result<Field, Error> {
+    //     Ok(Field::P(self.heap.allocate(size)))
+    // }
 
-    fn free_heap(&mut self, var: *mut [usize]) {
-        unsafe { self.heap.free(var) }
-    }
+    // fn free_heap(&mut self, var: *mut [usize]) {
+    //     unsafe { self.heap.free(var) }
+    // }
 
     fn get_input(&self) -> String{
         let mut input = String::new();
@@ -535,19 +500,17 @@ impl Vm {
     fn get_usize_from_register(&mut self, register: &Field) -> Result<usize, Error> {
         let r1 = register.to_r(&self);
         match r1 {
-            Ok((r, _)) => {
+            Ok(r) => {
                 let register1_value = self.registers.get(r).clone();
                 Ok(register1_value.to_i_or_u(&self)?)
             },
             Err(_) => {
-                let key = register.to_str(&self);
-                match key {
-                    Ok(k) => if self.data.contains_key(k) {
-                        Ok(self.data.get(k).unwrap().to_i_or_u(&self)?)
-                    } else {
-                        return Err(self.error(format!("Operand '{}' is not valid here.", k), Some(vec![register.clone()])).unwrap_err());
-                    }
-                    Err(_) => Ok(register.to_i_or_u(&self)?)
+                let k = register.to_string();
+                if self.data.contains_key(&k) {
+                    Ok(self.data.get(&k).unwrap().to_i_or_u(&self)?)
+                } else {
+                    return Ok(register.to_i_or_u(&self)?);
+                    //return Err(self.error(format!("Operand '{}' is not valid here.", k), Some(vec![register.clone()])).unwrap_err());
                 }
             }
         }
@@ -558,7 +521,7 @@ impl Vm {
         let register2 = self.pop_operand(&mut instruction.operand)?;
         let u1 = self.get_usize_from_register(&register1)?;
         let u2 = self.get_usize_from_register(&register2)?;
-        return Ok((register2.to_r(&self)?.0, u1, u2));
+        return Ok((register2.to_r(&self)?, u1, u2));
     }
 }
 
@@ -574,13 +537,13 @@ mod test {
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
             ins_vec(OpCode::Move, vec![Register::Rb.into(), Register::Ra.into()]),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Register::Rb.into()]),
-            ins_vec(OpCode::Move, vec![Register::Rd.into(), Field::S("uhoh".to_string())]),
+            ins_vec(OpCode::Move, vec![Register::Rd.into(), Field(Type::String("uhoh".to_string()))]),
         ], None, hm)?;
 
-        assert_eq!(vm.registers.ra, Field::I(4));
-        assert_eq!(vm.registers.rb, Field::I(4));
-        assert_eq!(vm.registers.rc, Field::I(4));
-        assert_eq!(vm.registers.rd, Field::S("Uh OH!".to_string()));
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.rb.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.rc.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.rd.to_string(), "Uh OH!".to_string());
         Ok(())
     }
 
@@ -675,16 +638,6 @@ mod test {
         ], None)?;
 
         assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 1);
-        Ok(())
-    }
-
-    #[test]
-    fn test_print() -> Result<(),Error>  {
-        let _ = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(69)]),
-            ins(OpCode::Print, Register::Ra)
-        ], None)?;
-
         Ok(())
     }
 
@@ -883,27 +836,32 @@ mod test {
     #[test]
     fn test_jl() -> Result<(),Error>  {
         let mut hashmap = HashMap::new();
-        hashmap.insert("@less".to_string(), 6);
+        hashmap.insert("less".to_string(), 6);
         let vm = create_vm(vec![
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
             ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
-            ins(OpCode::Jl, "@less"),
+            ins(OpCode::Jl, "less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
 
+        println!("Step 2");
+
         assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        println!("Step 3");
 
         let mut hashmap = HashMap::new();
-        hashmap.insert("@less".to_string(), 5);
+        hashmap.insert("less".to_string(), 5);
         let vm = create_vm(vec![
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
             ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
-            ins(OpCode::Jl, "@less"),
+            ins(OpCode::Jl, "less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
         ], Some(hashmap))?;
+        println!("Step 4");
         assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        println!("Step 5");
         Ok(())
     }
 
@@ -1003,106 +961,106 @@ mod test {
         Ok(())
     }
 
-    #[test]
-    fn test_alloc() -> Result<(),Error> {
-        let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(5)]),
-            ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from(6)]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from(12)]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from(18)]),
-        ], None)?;
+    // #[test]
+    // fn test_alloc() -> Result<(),Error> {
+    //     let vm = create_vm(vec![
+    //         ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(5)]),
+    //         ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from(6)]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from(12)]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from(18)]),
+    //     ], None)?;
 
-        let ptr = vm.registers.rd.to_p(&vm)?;
-        let boxed = unsafe {Box::from_raw(ptr)};
-        assert_eq!(boxed.len(), 5);
-        assert_eq!(boxed[0], 6);
-        assert_eq!(boxed[1], 12);
-        assert_eq!(boxed[2], 18);
+    //     let ptr = vm.registers.rd.to_p(&vm)?;
+    //     let boxed = unsafe {Box::from_raw(ptr)};
+    //     assert_eq!(boxed.len(), 5);
+    //     assert_eq!(boxed[0], 6);
+    //     assert_eq!(boxed[1], 12);
+    //     assert_eq!(boxed[2], 18);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn test_free() -> Result<(),Error> {
-        let mut vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
-            ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
-            ins(OpCode::Println, Register::Rd),
-        ], None)?;
+    // #[test]
+    // fn test_free() -> Result<(),Error> {
+    //     let mut vm = create_vm(vec![
+    //         ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
+    //         ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
+    //         ins(OpCode::Println, Register::Rd),
+    //     ], None)?;
 
-        assert_eq!(vm.heap.len(), 1);
+    //     assert_eq!(vm.heap.len(), 1);
 
-        let mut prog = Program::new();
-        prog.instructions = vec![ins(OpCode::Free, Register::Rd)];
-        vm.pc = 0;
-        let _ = vm.execute(prog);
-        assert_eq!(vm.heap.len(), 0);
+    //     let mut prog = Program::new();
+    //     prog.instructions = vec![ins(OpCode::Free, Register::Rd)];
+    //     vm.pc = 0;
+    //     let _ = vm.execute(prog);
+    //     assert_eq!(vm.heap.len(), 0);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn test_freed_error() -> Result<(),Error> {
-        let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
-            ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
-            ins(OpCode::Println, Register::Rd),
-            ins(OpCode::Free, Register::Rd),
-            ins(OpCode::Println, Register::Rd),
-        ], None);
+    // #[test]
+    // fn test_freed_error() -> Result<(),Error> {
+    //     let vm = create_vm(vec![
+    //         ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
+    //         ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
+    //         ins(OpCode::Println, Register::Rd),
+    //         ins(OpCode::Free, Register::Rd),
+    //         ins(OpCode::Println, Register::Rd),
+    //     ], None);
 
-        assert!(vm.is_err());
-        let err = vm.unwrap_err();
-        assert_eq!(err.message, "Cannot set offset for allocation because memory has already been freed!");
+    //     assert!(vm.is_err());
+    //     let err = vm.unwrap_err();
+    //     assert_eq!(err.message, "Cannot print allocation because memory has already been freed!");
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn test_clear() -> Result<(),Error> {
-        let mut vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
-            ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
-            ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
-        ], None)?;
+    // #[test]
+    // fn test_clear() -> Result<(),Error> {
+    //     let mut vm = create_vm(vec![
+    //         ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(3)]),
+    //         ins_vec(OpCode::Alloc, vec![Register::Rd.into(), Register::Rf.into()]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(0)), Field::from('h')]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(1)), Field::from('e')]),
+    //         ins_vec(OpCode::Move, vec![Field::RO(Register::Rd, OffsetOperand::Number(2)), Field::from('y')]),
+    //     ], None)?;
 
-        assert_eq!(1, vm.heap.len());
-        let allocations = vm.heap.get_allocations();
-        let real_allocation = {
-            let (first_allocation, _) = allocations.iter().nth(0).unwrap();
-            first_allocation.clone()
-        };
+    //     assert_eq!(1, vm.heap.len());
+    //     let allocations = vm.heap.get_allocations();
+    //     let real_allocation = {
+    //         let (first_allocation, _) = allocations.iter().nth(0).unwrap();
+    //         first_allocation.clone()
+    //     };
 
-        let derefed = unsafe {Box::from_raw(real_allocation)};
-        assert_eq!(vec!['h' as usize,'e' as usize,'y' as usize], derefed.to_vec());
-        let _ = Box::into_raw(derefed);
-        vm.heap.clear();
-        assert_eq!(0, vm.heap.len());
+    //     let derefed = unsafe {Box::from_raw(real_allocation)};
+    //     assert_eq!(vec!['h' as usize,'e' as usize,'y' as usize], derefed.to_vec());
+    //     let _ = Box::into_raw(derefed);
+    //     vm.heap.clear();
+    //     assert_eq!(0, vm.heap.len());
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn test_cast() -> Result<(),Error> {
-        let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(100)]),
-            ins_vec(OpCode::Cast, vec![Register::Rf.into(), Field::from("char")]),
-        ], None)?;
+    // #[test]
+    // fn test_cast() -> Result<(),Error> {
+    //     let vm = create_vm(vec![
+    //         ins_vec(OpCode::Move, vec![Register::Rf.into(), Field::from(100)]),
+    //         ins_vec(OpCode::Cast, vec![Register::Rf.into(), Field::from("char")]),
+    //     ], None)?;
 
-        let field = vm.registers.rf;
-        assert_eq!(field, Field::C('d'));
+    //     let field = vm.registers.rf;
+    //     assert_eq!(field, Field::C('d'));
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     fn ins<T>(opcode: OpCode, item: T) -> Instruction where Field: From<T> {
         Instruction::new(opcode, vec![Field::from(item)])

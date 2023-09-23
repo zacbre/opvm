@@ -50,8 +50,8 @@ impl BuiltIn for Concat {
 #[derive(Debug)]
 pub struct DateNowUnix;
 impl BuiltIn for DateNowUnix {
-    fn call(&self, registers: &mut Registers, _: &mut Stack<Field>) -> Field {
-        Field::from(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros())
+    fn call(&self, _: &mut Registers, _: &mut Stack<Field>) -> Field {
+        Field::from(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as usize)
     }
 
     fn get_name(&self) -> &str {
@@ -63,10 +63,25 @@ impl BuiltIn for DateNowUnix {
 pub struct DateNow;
 impl BuiltIn for DateNow {
     fn call(&self, registers: &mut Registers, _: &mut Stack<Field>) -> Field {
-        Field::from(Utc::now())
+        //Field::from(Utc::now())
+        Field::default()
     }
 
     fn get_name(&self) -> &str {
         "__date_now"
+    }
+}
+
+#[derive(Debug)]
+pub struct Dbg;
+impl BuiltIn for Dbg {
+    fn call(&self, registers: &mut Registers, stack: &mut Stack<Field>) -> Field {
+        println!("{:?}", registers);
+        println!("{:?}", stack);
+        Field::default()
+    }
+
+    fn get_name(&self) -> &str {
+        "__dbg_print"
     }
 }

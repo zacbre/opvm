@@ -1,9 +1,10 @@
+use crate::types::Type;
 use crate::vm::opcode::OpCode;
 use crate::vm::field::Field;
-use crate::vm::register::{OffsetOperand, Register};
+use crate::vm::register::Register;
 use crate::vm::stack::Stack;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Instruction {
     pub opcode: OpCode,
     pub operand: Stack<Field>
@@ -31,17 +32,13 @@ impl Instruction {
         }
         let mut stack: Stack<Field> = Stack::new();
         for i in 1..str.len() {
-            let (register, offset_type) = Register::from(str[i]);
+            let register = Register::from(str[i]);
             match register {
                 Register::Unknown => {
                     stack.push(Instruction::construct_field(str[i]));
                 }
                 _ => {
-                    if offset_type == OffsetOperand::Default {
-                        stack.push(Field::R(register));
-                    } else {
-                        stack.push(Field::RO(register, offset_type));
-                    }
+                    stack.push(Field(Type::Register(register)));
                 }
             }
         }
@@ -90,8 +87,7 @@ impl Instruction {
 
         let mut final_string = String::default();
         final_string.push_str(str);
-        let cloned_operands = self.operand.clone();
-        let operands = cloned_operands.to_vec();
+        let operands = self.operand.to_vec();
         for i in 0..operands.len() {
             let item = &operands[i];
             final_string.push_str(" ");

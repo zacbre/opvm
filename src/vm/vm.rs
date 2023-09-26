@@ -117,7 +117,7 @@ impl Vm {
                         //     Registers::set_offset_for_p(self, r, operand, Field::from(l))?;
                         // }
                         Field(Type::Register(r2)) => {
-                            self.registers.set(r, self.registers.get(r2.clone()).underlying_data_clone());
+                            self.registers.set(r, self.registers.get(*r2).underlying_data_clone());
                         }
                         _ => self.registers.set(r, data)
                     }
@@ -145,24 +145,19 @@ impl Vm {
                     self.registers.set(register, data).clone()
                 }
                 OpCode::Add => {
-                    let (register, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
-                    self.registers.set(register, Field::from(i1 + i2));
+                    self.add(&mut instruction)?;
                 }
                 OpCode::Mul => {
-                    let (register, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
-                    self.registers.set(register, Field::from(i1 * i2));
+                    self.mul(&mut instruction)?;
                 }
                 OpCode::Sub => {
-                    let (register, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
-                    self.registers.set(register, Field::from(i2 - i1));
+                    self.sub(&mut instruction)?;
                 }
                 OpCode::Div => {
-                    let (register, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
-                    self.registers.set(register, Field::from(i2 / i1));
+                    self.div(&mut instruction)?;
                 }
                 OpCode::Mod => {
-                    let (register, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
-                    self.registers.set(register, Field::from(i2 % i1));
+                    self.rem(&mut instruction)?;
                 }
                 OpCode::Input => {
                     let input = self.get_input();
@@ -190,17 +185,7 @@ impl Vm {
                     continue;
                 }
                 OpCode::Test => {
-                    let (_, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
-                    self.registers.reset_flags();
-                    if i1 == i2 {
-                        self.registers.set_equals_flag(true);
-                    }
-                    if i1 < i2 {
-                        self.registers.set_less_than_flag(true);
-                    }
-                    if i1 > i2 {
-                        self.registers.set_greater_than_flag(true);
-                    }
+                    self.test(&mut instruction)?;
                 }
                 OpCode::Jmp => {
                     let operand = self.pop_operand(&mut instruction.operand)?;
@@ -256,61 +241,8 @@ impl Vm {
                         continue;
                     }
                 }
-                OpCode::Inc => {
-                    let register = self.pop_operand(&mut instruction.operand)?;
-                    let register = register.to_r(&self)?;
-                    let v1 = self.registers.get(register).underlying_data_clone();
-                    match v1.0 {
-                        Type::Int(mut i) => {
-                            i += 1;
-                            self.registers.set(register, Field::from(i));
-                        }
-                        Type::UInt(mut u) => {
-                            u += 1;
-                            self.registers.set(register, Field::from(u));
-                        }
-                        Type::Byte(mut b) => {
-                            b += 1;
-                            self.registers.set(register, Field::from(b));
-                        }
-                        Type::Char(c) => {
-                            let new_char: char = (c as u8 + 1) as char;
-                            self.registers.set(register, Field::from(new_char));
-                        }
-                        _ => {
-                            return self.error(format!("Cannot decrement non-int type at {}!", self.pc), Some(vec![v1]));
-                        }
-                    }
-                }
-                OpCode::Dec => {
-                    let register = self.pop_operand(&mut instruction.operand)?;
-                    let register = register.to_r(&self)?;
-                    let v1 = self.registers.get(register).underlying_data_clone();
-                    match v1.0 {
-                        Type::Int(mut i) => {
-                            i -= 1;
-                            self.registers.set(register, Field::from(i));
-                        }
-                        Type::UInt(mut u) => {
-                            u -= 1;
-                            self.registers.set(register, Field::from(u));
-                        }
-                        Type::Byte(mut b) => {
-                            b -= 1;
-                            self.registers.set(register, Field::from(b));
-                        }
-                        Type::Char(c) => {
-                            let new_char: char = (c as u8 - 1) as char;
-                            self.registers.set(register, Field::from(new_char));
-                        }
-                        _ => {
-                            return self.error(format!("Cannot decrement non-int type at {}!", self.pc), Some(vec![v1]));
-                        }
-                    }
-                }
                 OpCode::Xor => {
-                    let (_, i1, i2) = self.get_fields_from_registers_or_data(&mut instruction)?;
-                    self.registers.set(Register::Rd, Field::from(i1 ^ i2));
+                    self.xor(&mut instruction)?;
                 }
                 OpCode::Dup => {
                     let v1 = self.pop_stack()?;
@@ -497,33 +429,161 @@ impl Vm {
         input.trim().to_string()
     }
 
-    fn get_usize_from_register(&mut self, register: &Field) -> Result<usize, Error> {
-        let r1 = register.to_r(&self);
-        match r1 {
-            Ok(r) => {
-                let register1_value = self.registers.get(r).clone();
-                Ok(register1_value.to_i_or_u(&self)?)
-            },
-            Err(_) => {
-                let k = register.to_string();
-                if self.data.contains_key(&k) {
-                    Ok(self.data.get(&k).unwrap().to_i_or_u(&self)?)
-                } else {
-                    return Ok(register.to_i_or_u(&self)?);
-                    //return Err(self.error(format!("Operand '{}' is not valid here.", k), Some(vec![register.clone()])).unwrap_err());
-                }
+    fn test(&mut self, instruction: &mut Instruction) -> Result<(), Error> {
+        let register2 = self.pop_operand(&mut instruction.operand)?;
+        let register1 = self.pop_operand(&mut instruction.operand)?;
+
+        let r = register1.to_r(&self)?;
+        let i1 = self.registers.get(r).underlying_data_clone();
+
+        let i2 = match register2 {
+            Field(Type::Register(r)) => {
+                self.registers.get(r).underlying_data_clone()
             }
+            _ => {
+                register2
+            }
+        };
+
+        self.registers.reset_flags();
+        if i1 == i2 {
+            self.registers.set_equals_flag(true);
         }
+        if i1 < i2 {
+            self.registers.set_less_than_flag(true);
+        }
+        if i1 > i2 {
+            self.registers.set_greater_than_flag(true);
+        }
+        Ok(())
     }
 
-    fn get_fields_from_registers_or_data(&mut self, instruction: &mut Instruction) -> Result<(Register, usize, usize), Error> {
-        let register1 = self.pop_operand(&mut instruction.operand)?;
+    fn add(&mut self, instruction: &mut Instruction) -> Result<(), Error> {
         let register2 = self.pop_operand(&mut instruction.operand)?;
-        // todo: determine if 2 items can be subtracted from each other?
-        let u1 = self.get_usize_from_register(&register1)?;
-        let u2 = self.get_usize_from_register(&register2)?;
-        return Ok((register2.to_r(&self)?, u1, u2));
+        let register1 = self.pop_operand(&mut instruction.operand)?;
+
+        let r = register1.to_r(&self)?;
+        let r1_data = self.registers.get(r).underlying_data_clone();
+
+        let data2 = match register2 {
+            Field(Type::Register(r)) => {
+                self.registers.get(r).underlying_data_clone()
+            }
+            _ => {
+                register2
+            }
+        };
+
+        self.registers.set(r, r1_data + data2);
+
+        Ok(())
     }
+
+    fn sub(&mut self, instruction: &mut Instruction) -> Result<(), Error> {
+        let register2 = self.pop_operand(&mut instruction.operand)?;
+        let register1 = self.pop_operand(&mut instruction.operand)?;
+    
+        let r = register1.to_r(&self)?;
+        let r1_data = self.registers.get(r).underlying_data_clone();
+    
+        let data2 = match register2 {
+            Field(Type::Register(r)) => {
+                self.registers.get(r).underlying_data_clone()
+            }
+            _ => {
+                register2
+            }
+        };
+    
+        self.registers.set(r, r1_data - data2);
+    
+        Ok(())
+    }
+    
+    fn mul(&mut self, instruction: &mut Instruction) -> Result<(), Error> {
+        let register2 = self.pop_operand(&mut instruction.operand)?;
+        let register1 = self.pop_operand(&mut instruction.operand)?;
+    
+        let r = register1.to_r(&self)?;
+        let r1_data = self.registers.get(r).underlying_data_clone();
+    
+        let data2 = match register2 {
+            Field(Type::Register(r)) => {
+                self.registers.get(r).underlying_data_clone()
+            }
+            _ => {
+                register2
+            }
+        };
+    
+        self.registers.set(r, r1_data * data2);
+    
+        Ok(())
+    }
+    
+    fn div(&mut self, instruction: &mut Instruction) -> Result<(), Error> {
+        let register2 = self.pop_operand(&mut instruction.operand)?;
+        let register1 = self.pop_operand(&mut instruction.operand)?;
+    
+        let r = register1.to_r(&self)?;
+        let r1_data = self.registers.get(r).underlying_data_clone();
+    
+        let data2 = match register2 {
+            Field(Type::Register(r)) => {
+                self.registers.get(r).underlying_data_clone()
+            }
+            _ => {
+                register2
+            }
+        };
+    
+        self.registers.set(r, r1_data / data2);
+    
+        Ok(())
+    }
+    
+    fn rem(&mut self, instruction: &mut Instruction) -> Result<(), Error> {
+        let register2 = self.pop_operand(&mut instruction.operand)?;
+        let register1 = self.pop_operand(&mut instruction.operand)?;
+    
+        let r = register1.to_r(&self)?;
+        let r1_data = self.registers.get(r).underlying_data_clone();
+    
+        let data2 = match register2 {
+            Field(Type::Register(r)) => {
+                self.registers.get(r).underlying_data_clone()
+            }
+            _ => {
+                register2
+            }
+        };
+    
+        self.registers.set(r, r1_data % data2);
+    
+        Ok(())
+    }
+
+    fn xor(&mut self, instruction: &mut Instruction) -> Result<(), Error> {
+        let register2 = self.pop_operand(&mut instruction.operand)?;
+        let register1 = self.pop_operand(&mut instruction.operand)?;
+
+        let r = register1.to_r(&self)?;
+        let r1_data = self.registers.get(r).underlying_data_clone();
+
+        let data2 = match register2 {
+            Field(Type::Register(r)) => {
+                self.registers.get(r).underlying_data_clone()
+            }
+            _ => {
+                register2
+            }
+        };
+
+        self.registers.set(r, r1_data ^ data2);
+
+        Ok(())
+    }
+    
 }
 
 #[cfg(test)]
@@ -763,8 +823,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 6);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jle, "@less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -786,8 +846,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 5);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jle, "@less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -801,8 +861,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 6);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jge, "@greater"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -824,8 +884,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 5);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jge, "@greater"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -839,8 +899,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("less".to_string(), 6);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jl, "less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -854,8 +914,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("less".to_string(), 5);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jl, "less"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -871,8 +931,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 6);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jge, "@greater"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -883,8 +943,8 @@ mod test {
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 5);
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(4)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
             ins(OpCode::Jge, "@greater"),
             ins_vec(OpCode::Move, vec![Register::Rc.into(), Field::from(5)]),
@@ -907,28 +967,6 @@ mod test {
     }
 
     #[test]
-    fn test_inc() -> Result<(),Error>  {
-        let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(10)]),
-            ins(OpCode::Inc, Register::Ra)
-        ], None)?;
-
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 11);
-        Ok(())
-    }
-
-    #[test]
-    fn test_dec() -> Result<(),Error>  {
-        let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(10)]),
-            ins(OpCode::Dec, Register::Ra)
-        ], None)?;
-
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 9);
-        Ok(())
-    }
-
-    #[test]
     fn test_xor() -> Result<(),Error> {
         let vm = create_vm(vec![
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(10)]),
@@ -936,7 +974,7 @@ mod test {
             ins_vec(OpCode::Xor, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.rd.to_i_or_u(&vm)?, 0);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 0);
 
         let vm = create_vm(vec![
             ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(100)]),
@@ -944,15 +982,15 @@ mod test {
             ins_vec(OpCode::Xor, vec![Register::Ra.into(), Register::Rb.into()])
         ], None)?;
 
-        assert_eq!(vm.registers.rd.to_i_or_u(&vm)?, 110);
+        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 110);
         Ok(())
     }
 
     #[test]
     fn test_test() -> Result<(),Error>  {
         let vm = create_vm(vec![
-            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(5)]),
-            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Ra.into(), Field::from(7)]),
+            ins_vec(OpCode::Move, vec![Register::Rb.into(), Field::from(5)]),
             ins_vec(OpCode::Test, vec![Register::Ra.into(), Register::Rb.into()]),
         ], None)?;
 

@@ -40,6 +40,7 @@ impl BuiltIn for Print {
 pub struct Concat;
 impl BuiltIn for Concat {
     fn call(&self, registers: &mut Registers, _: &mut Stack<Field>) -> Field {
+        // todo: there's probably a faster way than creating a new String
         Field::from(format!("{}{}", registers.rd, registers.re).as_str())        
     }
 

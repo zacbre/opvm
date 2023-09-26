@@ -13,47 +13,43 @@ fn main() {
     section .code
         _main:
             call __date_now_unix
-            mov r1,r0
+            push r0
             mov ra,0
             mov rb,_loop_times
         _loop:
             call _print_name
-            inc ra
-            test rb,ra
+            add ra,1
+            test ra,rb
             jle _loop
             jmp _exit
         _print_name:
-            mov rd,_wife_name
-            mov re,_space
-            call __concat
-            mov rd,r0
-            mov re,ra
-            call __concat
-            mov rd,r0
+            mov rd,ra
             call __println
             ret
         _exit:
-            mov rd,_done
-            call __print
-            call __date_now
-            mov rd,r0
-            call __println
             call __date_now_unix
+            pop r1
             sub r0,r1
             mov r1,r0
             mov rd,_took
             call __print
             mov rd,r1
             call __print
+            test r1,1
+            je _sec
+        _secs:
             mov rd,_secs
+            jmp _end
+        _sec:
+            mov rd,_sec
+        _end:
             call __println
     section .data
-        _wife_name: "Katie"
         _space: " "
-        _done: "Done at "
         _took: "Took "
         _secs: " seconds"
-        _loop_times: 100000
+        _sec: " second"
+        _loop_times: 10000
     "#.to_string());
 
     let program = val.unwrap();

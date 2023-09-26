@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::{fmt::{Display, Formatter}, ops::{Add, Sub, Mul, Div, BitXor, Rem}};
 use crate::types::{Type, Object};
 
 use super::register::Register;
@@ -158,5 +158,66 @@ impl Display for Field {
             &Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
             _ => write!(f, "{:?}", self),
         }
+    }
+}
+
+impl Add for Field {
+    type Output = Field;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Field(self.0 + rhs.0)
+    }
+}
+
+
+impl Sub for Field {
+    type Output = Field;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Field(self.0 - rhs.0)
+    }
+}
+
+impl Mul for Field {
+    type Output = Field;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Field(self.0 * rhs.0)
+    }
+}
+
+impl Div for Field {
+    type Output = Field;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Field(self.0 / rhs.0)
+    }
+}
+
+impl BitXor for Field {
+    type Output = Field;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Field(self.0 ^ rhs.0)
+    }
+}
+
+impl Rem for Field {
+    type Output = Field;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        Field(self.0 % rhs.0)
+    }
+}
+
+impl PartialEq for Field {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialOrd for Field {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0) 
     }
 }

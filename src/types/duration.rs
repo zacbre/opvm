@@ -2,7 +2,6 @@ use std::{fmt::Display, ops::Sub};
 
 use super::Object;
 
-
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Duration(chrono::Duration);
 impl Object for Duration {

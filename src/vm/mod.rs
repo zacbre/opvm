@@ -1,11 +1,11 @@
 pub mod field;
 pub mod instruction;
 pub mod program;
-pub mod vm;
 pub mod register;
+pub mod vm;
 
-mod opcode;
-mod stack;
+mod builtin;
 mod error;
 mod heap;
-mod builtin;
+mod opcode;
+mod stack;

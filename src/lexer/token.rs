@@ -10,5 +10,5 @@ pub enum TokenType {
     Label,
     Instruction,
     Empty,
-    Comment
+    Comment,
 }

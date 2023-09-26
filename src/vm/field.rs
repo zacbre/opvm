@@ -1,5 +1,9 @@
-use std::{fmt::{Display, Formatter}, ops::{Add, Sub, Mul, Div, BitXor, Rem}};
-use crate::types::{Type, Object};
+use crate::types::{Object, Type, Allocation};
+use std::{
+    fmt::{Display, Formatter},
+    ops::{Add, BitXor, Div, Mul, Rem, Sub},
+    ptr::NonNull,
+};
 
 use super::register::Register;
 
@@ -19,14 +23,17 @@ impl Field {
             Type::Pointer(p) => Field(Type::Pointer(*p)),
             Type::Register(r) => Field(Type::Register(*r)),
             Type::Object(o) => Field(Type::Object((*o).clone())),
-            _ => Field::default()
+            _ => Field::default(),
         }
     }
     pub fn to_r(&self, arg: &&mut super::vm::Vm) -> Result<Register, super::error::Error> {
         match self.0 {
             Type::Register(r) => Ok(r),
             _ => {
-                let err = arg.error("Value is not a register!".to_string(), Some(vec![self.underlying_data_clone()]));
+                let err = arg.error(
+                    "Value is not a register!".to_string(),
+                    Some(vec![self.underlying_data_clone()]),
+                );
                 Err(err.unwrap_err())
             }
         }
@@ -37,7 +44,23 @@ impl Field {
             Type::UInt(u) => Ok(u),
             Type::Int(i) => Ok(i as usize),
             _ => {
-                let err = arg.error(format!("Value '{:?}' is not a number!", self.0), Some(vec![self.underlying_data_clone()]));
+                let err = arg.error(
+                    format!("Value '{:?}' is not a number!", self.0),
+                    Some(vec![self.underlying_data_clone()]),
+                );
+                Err(err.unwrap_err())
+            }
+        }
+    }
+
+    pub fn to_p(&self, arg: &&mut super::vm::Vm) -> Result<&Allocation, super::error::Error> {
+        match &self.0 {
+            Type::Pointer(p) => Ok(p),
+            _ => {
+                let err = arg.error(
+                    "Value is not a pointer!".to_string(),
+                    Some(vec![self.underlying_data_clone()]),
+                );
                 Err(err.unwrap_err())
             }
         }
@@ -50,7 +73,7 @@ impl Default for Field {
     }
 }
 
-/*  
+/*
     Byte(u8),
     Short(u16),
     Int(i64),
@@ -61,7 +84,7 @@ impl Default for Field {
     Char(char),
     String(String),
     Bool(bool),
-    Pointer(*mut [usize]), 
+    Pointer(*mut [usize]),
 */
 
 impl From<u8> for Field {
@@ -124,8 +147,8 @@ impl From<bool> for Field {
     }
 }
 
-impl From<*mut [usize]> for Field {
-    fn from(field: *mut [usize]) -> Self {
+impl From<Allocation> for Field {
+    fn from(field: Allocation) -> Self {
         Field(Type::Pointer(field))
     }
 }
@@ -168,7 +191,6 @@ impl Add for Field {
         Field(self.0 + rhs.0)
     }
 }
-
 
 impl Sub for Field {
     type Output = Field;
@@ -218,6 +240,6 @@ impl PartialEq for Field {
 
 impl PartialOrd for Field {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0) 
+        self.0.partial_cmp(&other.0)
     }
 }

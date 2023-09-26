@@ -62,7 +62,7 @@ impl From<&str> for OpCode {
             "cast" => OpCode::Cast,
             //"load" => OpCode::Load,
             //"store" => OpCode::Store,
-            _ => OpCode::Igl
+            _ => OpCode::Igl,
         }
     }
 }

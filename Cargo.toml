@@ -1,3 +1,4 @@
+patch = { crates-io = { linked_list_allocator = { path = 'C:\Users\zac\.rhack\linked_list_allocator-0.10.5' } } }
 [package]
 name = "opvm"
 version = "0.1.0"
@@ -9,3 +10,4 @@ edition = "2018"
 nom = "7.0.0"
 paste = "1.0.11"
 chrono = "*"
+linked_list_allocator = "0.10.5"

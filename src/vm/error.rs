@@ -5,7 +5,7 @@ use std::num::ParseIntError;
 pub struct Error {
     pub message: String,
     pub stacktrace: Vec<String>,
-    pub app_stack: Vec<String>
+    pub app_stack: Vec<String>,
 }
 
 impl Error {
@@ -13,7 +13,7 @@ impl Error {
         Error {
             message,
             stacktrace: stack,
-            app_stack
+            app_stack,
         }
     }
 }

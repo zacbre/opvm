@@ -1,13 +1,13 @@
 use crate::types::Type;
-use crate::vm::opcode::OpCode;
 use crate::vm::field::Field;
+use crate::vm::opcode::OpCode;
 use crate::vm::register::Register;
 use crate::vm::stack::Stack;
 
 #[derive(Debug)]
 pub struct Instruction {
     pub opcode: OpCode,
-    pub operand: Stack<Field>
+    pub operand: Stack<Field>,
 }
 
 impl Instruction {
@@ -20,7 +20,7 @@ impl Instruction {
 
         Instruction {
             opcode,
-            operand: stack
+            operand: stack,
         }
     }
 
@@ -45,36 +45,46 @@ impl Instruction {
 
         Instruction {
             opcode,
-            operand: stack
+            operand: stack,
         }
     }
 
     pub fn construct_field(str: &str) -> Field {
         if str.contains("0x") {
             match i64::from_str_radix(str.trim_start_matches("0x"), 16) {
-                Ok(i) => { return Field::from(i); }
+                Ok(i) => {
+                    return Field::from(i);
+                }
                 Err(_) => (),
             }
         }
 
         match str.parse::<i64>() {
-            Ok(i) => { return Field::from(i); }
+            Ok(i) => {
+                return Field::from(i);
+            }
             Err(_) => (),
         }
 
         match str.parse::<i32>() {
-            Ok(i) => { return Field::from(i); }
+            Ok(i) => {
+                return Field::from(i);
+            }
             Err(_) => (),
         }
 
         match str.parse::<usize>() {
-            Ok(i) => { return Field::from(i); }
+            Ok(i) => {
+                return Field::from(i);
+            }
             Err(_) => (),
         }
 
         if str.len() == 1 {
             match str.parse::<char>() {
-                Ok(i) => { return Field::from(i); }
+                Ok(i) => {
+                    return Field::from(i);
+                }
                 Err(_) => (),
             }
         }

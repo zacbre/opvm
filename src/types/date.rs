@@ -1,7 +1,6 @@
 use std::{fmt::Display, ops::Sub};
 
-use super::{Object, duration::Duration};
-
+use super::{duration::Duration, Object};
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Date(chrono::DateTime<chrono::Utc>);

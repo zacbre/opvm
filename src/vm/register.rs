@@ -1,5 +1,5 @@
-use std::fmt::{Display, Formatter};
 use super::field::Field;
+use std::fmt::{Display, Formatter};
 
 macro_rules! flag_register {
     ($e:expr,bool) => {
@@ -89,7 +89,7 @@ impl Display for Register {
             Register::R7 => write!(f, "r7"),
             Register::R8 => write!(f, "r8"),
             Register::R9 => write!(f, "r9"),
-            Register::Unknown => write!(f, "unknown")
+            Register::Unknown => write!(f, "unknown"),
         }
     }
 }
@@ -263,7 +263,7 @@ impl Registers {
             Register::R7 => &self.r7,
             Register::R8 => &self.r8,
             Register::R9 => &self.r9,
-            _ => panic!("Register does not exist!")
+            _ => panic!("Register does not exist!"),
         }
     }
 

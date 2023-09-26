@@ -1,15 +1,17 @@
 #![feature(layout_for_ptr)]
 
+use vm::program::Program;
+
 use crate::lexer::lexer::Lexer;
 use crate::vm::vm::Vm;
 
 mod lexer;
-mod vm;
 mod types;
+mod vm;
 
-fn main() {
-    let lexer = Lexer::new();
-    let val = lexer.process(r#"
+fn counter_10000(lexer: Lexer) -> Option<Program> {
+    lexer.process(
+        r#"
     section .code
         _main:
             call __date_now_unix
@@ -50,9 +52,31 @@ fn main() {
         _secs: " seconds"
         _sec: " second"
         _loop_times: 10000
-    "#.to_string());
+    "#
+        .to_string(),
+    )
+}
 
-    let program = val.unwrap();
+fn alloc_test(lexer: Lexer) -> Option<Program> {
+    lexer.process(
+        r#"
+    section .code
+        _main:
+            alloc r0,10
+            free r0
+            call __dbg_print
+    section .data
+
+    "#
+        .to_string(),
+    )
+}
+
+fn main() {
+    let lexer = Lexer::new();
+
+    //let program = counter_10000(lexer).unwrap();
+    let program = alloc_test(lexer).unwrap();
 
     let mut vm = Vm::new(true);
     let result = vm.execute(program);
@@ -67,7 +91,7 @@ fn main() {
             for item in e.app_stack {
                 println!("{}", item);
             }
-        },
-        Ok(_) => ()
+        }
+        Ok(_) => (),
     }
 }

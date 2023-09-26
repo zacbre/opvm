@@ -1,9 +1,11 @@
-use std::{fmt::Debug, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fmt::Debug,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::types::date::Date;
 
-use super::{register::Registers, field::Field, stack::Stack};
-
+use super::{field::Field, register::Registers, stack::Stack};
 
 pub trait BuiltIn: Debug {
     fn call(&self, registers: &mut Registers, args: &mut Stack<Field>) -> Field;
@@ -41,7 +43,7 @@ pub struct Concat;
 impl BuiltIn for Concat {
     fn call(&self, registers: &mut Registers, _: &mut Stack<Field>) -> Field {
         // todo: there's probably a faster way than creating a new String
-        Field::from(format!("{}{}", registers.rd, registers.re).as_str())        
+        Field::from(format!("{}{}", registers.rd, registers.re).as_str())
     }
 
     fn get_name(&self) -> &str {
@@ -53,7 +55,12 @@ impl BuiltIn for Concat {
 pub struct DateNowUnix;
 impl BuiltIn for DateNowUnix {
     fn call(&self, _: &mut Registers, _: &mut Stack<Field>) -> Field {
-        Field::from(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as usize)
+        Field::from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as usize,
+        )
     }
 
     fn get_name(&self) -> &str {

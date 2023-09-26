@@ -1,12 +1,41 @@
-use std::{fmt::Display, ops::{Add, Div, Mul, Sub, BitXor, Rem}};
 use core::fmt::Debug;
+use std::{
+    fmt::Display,
+    ops::{Add, BitXor, Div, Mul, Rem, Sub},
+    ptr::NonNull,
+};
 
 use crate::vm::register::Register;
 
 pub mod date;
 pub mod duration;
 
-pub trait Object: Display + Debug{
+#[derive(Debug)]
+pub struct Allocation {
+    pub ptr: NonNull<u8>,
+    pub size: usize,
+    pub align: usize,
+}
+
+impl Allocation {
+    pub fn new(ptr: NonNull<u8>, size: usize, align: usize) -> Self {
+        Self { ptr, size, align }
+    }
+}
+
+impl PartialEq for Allocation {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr == other.ptr
+    }
+}
+
+impl PartialOrd for Allocation {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.ptr.partial_cmp(&other.ptr)
+    }
+}
+
+pub trait Object: Display + Debug {
     fn clone(&self) -> Box<dyn Object>;
 }
 
@@ -20,7 +49,7 @@ pub enum Type {
     Char(char),
     String(String),
     Bool(bool),
-    Pointer(*mut [usize]),
+    Pointer(Allocation),
     Register(Register),
     Object(Box<dyn Object>),
 }
@@ -168,7 +197,6 @@ impl PartialEq for Type {
 
 impl PartialOrd for Type {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-
         match (self, other) {
             (Self::Byte(l0), Self::Byte(r0)) => l0.partial_cmp(r0),
             (Self::Short(l0), Self::Short(r0)) => l0.partial_cmp(r0),

@@ -5,10 +5,10 @@ use crate::vm::heap::Heap;
 use crate::vm::instruction::Instruction;
 use crate::vm::opcode::OpCode;
 use crate::vm::program::Program;
-use crate::vm::register::{Register, Registers};
+use crate::vm::register::Registers;
 use crate::vm::stack::Stack;
 use std::collections::HashMap;
-use std::ptr::NonNull;
+use std::sync::{Arc, Mutex};
 use std::{cmp, io};
 
 use super::builtin::{self, BuiltIn};
@@ -23,7 +23,7 @@ pub struct Vm {
     stack: Stack<Field>,
     call_stack: Stack<usize>,
     pc: usize,
-    pub heap: Heap,
+    pub heap: Arc<Mutex<Heap>>,
     reflection: bool,
 }
 
@@ -45,14 +45,14 @@ impl Vm {
             stack: Stack::new(),
             call_stack: Stack::new(),
             pc: 0,
-            heap: Heap::new(),
+            heap: Heap::get(),
             reflection,
         }
     }
 
     #[allow(dead_code)]
     pub fn reset(&mut self) {
-        self.heap = Heap::new();
+        self.heap.lock().unwrap().reset();
 
         while self.stack.len() > 0 {
             self.stack.pop();
@@ -302,7 +302,7 @@ impl Vm {
                 OpCode::Free => {
                     let register = self.pop_operand(&mut instruction.operand)?;
                     let register = register.to_r(&self)?;
-                    let field = self.registers.get(register);
+                    let field = self.registers.get(register).underlying_data_clone();
                     let p = field.to_p(&self)?;
                     self.free_heap(&p)?;
                 }
@@ -439,7 +439,8 @@ impl Vm {
     }
 
     fn allocate_heap(&mut self, size: usize) -> Result<Field, Error> {
-        let ptr = self.heap.allocate(size).map_err(
+        let mut heap = Heap::recover_poison(&self.heap);
+        let ptr = heap.allocate(size).map_err(
             |_| {
                 self.error(
                     format!("Cannot allocate heap at {}!", self.pc),
@@ -448,12 +449,13 @@ impl Vm {
                 .unwrap_err()
             },
         )?;
-        let mut allocation = Allocation::new(ptr, size, 2);
+        let allocation = Allocation::new(ptr, size, 2);
         Ok(Field(Type::Pointer(allocation)))
     }
 
     fn free_heap(&mut self, allocation: &Allocation) -> Result<(), Error> {
-        self.heap.deallocate(allocation.ptr, allocation.size).map_err(|_| {
+        let mut heap = Heap::recover_poison(&self.heap);
+        heap.deallocate(allocation.ptr, allocation.size).map_err(|_| {
             self.error(
                 format!("Cannot free heap at {}!", self.pc),
                 Some(vec![Field::from(allocation.ptr.as_ptr() as usize)]),
@@ -601,6 +603,8 @@ impl Vm {
 
 #[cfg(test)]
 mod test {
+    use crate::vm::register::Register;
+
     use super::*;
 
     #[test]

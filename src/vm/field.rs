@@ -1,8 +1,7 @@
 use crate::types::{Object, Type, Allocation};
 use std::{
     fmt::{Display, Formatter},
-    ops::{Add, BitXor, Div, Mul, Rem, Sub},
-    ptr::NonNull,
+    ops::{Add, BitXor, Div, Mul, Rem, Sub}
 };
 
 use super::register::Register;
@@ -20,10 +19,10 @@ impl Field {
             Type::Char(c) => Field(Type::Char(*c)),
             Type::String(s) => Field(Type::String(s.clone())),
             Type::Bool(b) => Field(Type::Bool(*b)),
-            Type::Pointer(p) => Field(Type::Pointer(*p)),
+            Type::Pointer(p) => Field(Type::Pointer(p.clone())),
             Type::Register(r) => Field(Type::Register(*r)),
             Type::Object(o) => Field(Type::Object((*o).clone())),
-            _ => Field::default(),
+            //_ => Field::default(),
         }
     }
     pub fn to_r(&self, arg: &&mut super::vm::Vm) -> Result<Register, super::error::Error> {
@@ -167,19 +166,19 @@ impl From<Box<dyn Object>> for Field {
 
 impl Display for Field {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            &Field(Type::Byte(b)) => write!(f, "{}", b),
-            &Field(Type::Short(s)) => write!(f, "{}", s),
-            &Field(Type::Float(fl)) => write!(f, "{}", fl),
-            &Field(Type::Bool(b)) => write!(f, "{}", b),
-            &Field(Type::Int(i)) => write!(f, "{}", i),
-            &Field(Type::UInt(u)) => write!(f, "{}", u),
-            &Field(Type::Pointer(p)) => write!(f, "{:?}", p),
-            &Field(Type::Char(c)) => write!(f, "{}", c),
-            &Field(Type::String(ref s)) => write!(f, "{}", s),
-            &Field(Type::Register(r)) => write!(f, "{:?}", r),
-            &Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
-            _ => write!(f, "{:?}", self),
+        match &self {
+            Field(Type::Byte(b)) => write!(f, "{}", b),
+            Field(Type::Short(s)) => write!(f, "{}", s),
+            Field(Type::Float(fl)) => write!(f, "{}", fl),
+            Field(Type::Bool(b)) => write!(f, "{}", b),
+            Field(Type::Int(i)) => write!(f, "{}", i),
+            Field(Type::UInt(u)) => write!(f, "{}", u),
+            Field(Type::Pointer(p)) => write!(f, "{:?}", p),
+            Field(Type::Char(c)) => write!(f, "{}", c),
+            Field(Type::String(ref s)) => write!(f, "{}", s),
+            Field(Type::Register(r)) => write!(f, "{:?}", r),
+            Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
+            //_ => write!(f, "{:?}", self),
         }
     }
 }

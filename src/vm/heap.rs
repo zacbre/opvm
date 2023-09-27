@@ -1,30 +1,36 @@
-use std::{alloc::Layout, ptr::NonNull};
-
+use std::{alloc::Layout, ptr::NonNull, sync::{Arc, Mutex, MutexGuard}};
+use once_cell::sync::Lazy;
 use linked_list_allocator::Heap as heap;
 
-use super::vm::Vm;
-
 const MAX_HEAP_SIZE: usize = 5000;
+static mut HEAP_MEM: [u8; MAX_HEAP_SIZE] = [0; MAX_HEAP_SIZE];
+static mut HEAP_ALLOCATED: bool = false;
+static mut HEAP_INSTANCE: Lazy<Arc<Mutex<Heap>>> = Lazy::new(|| {
+    let heap = Arc::new(Mutex::new(Heap {
+        allocator: heap::empty(),
+    }));
+    unsafe { heap.lock().unwrap().allocator.init(HEAP_MEM.as_mut_ptr(), MAX_HEAP_SIZE); }
+    heap
+});
 
 #[derive(Debug)]
 pub struct Heap {
-    storage: [u8; MAX_HEAP_SIZE],
     allocator: heap,
 }
 
 impl Heap {
-    pub fn new() -> Self {
-        let mut heap = Self {
-            storage: [0; MAX_HEAP_SIZE],
-            allocator: heap::empty(),
-        };
-
+    pub fn get() -> Arc<Mutex<Self>> {
         unsafe {
-            heap.allocator
-                .init(heap.storage.as_mut_ptr(), MAX_HEAP_SIZE);
+            return HEAP_INSTANCE.clone();
         }
+    }
 
-        heap
+    pub fn reset(&self) {
+        unsafe {
+            if HEAP_ALLOCATED {
+                HEAP_MEM = [0; MAX_HEAP_SIZE];
+            } 
+        }
     }
 
     pub fn allocate(&mut self, size: usize) -> Result<NonNull<u8>, ()> {
@@ -33,12 +39,47 @@ impl Heap {
     }
 
     pub fn deallocate(&mut self, ptr: NonNull<u8>, size: usize) -> Result<(), ()> {
-        println!("{:?}", self.storage);
         unsafe {
             self.allocator
                 .deallocate(ptr, Layout::from_size_align(size, 2).map_err(|_| ())?);
         }
 
         Ok(())
+    }
+
+    pub fn recover_poison<'a>(heap: &'a Arc<Mutex<Heap>>) -> MutexGuard<'a, Heap> {
+        let mut_heap =  heap.lock();
+        let data: MutexGuard<'a,Heap> = match mut_heap {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        data
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_heap() {
+        let heap = Heap::get();
+        let mut mut_heap = Heap::recover_poison(&heap);
+        let ptr = mut_heap.allocate(10).unwrap();
+        unsafe {
+            ptr.as_ptr().write(10);
+            assert_eq!(ptr.as_ptr().read(), 10);
+        }
+        mut_heap.deallocate(ptr, 10).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn should_panic_when_deallocate_heap_out_of_bounds() {
+        let heap = Heap::get();
+        let mut mut_heap = Heap::recover_poison(&heap);
+        let ptr = mut_heap.allocate(10).unwrap();
+        mut_heap.deallocate(ptr, 100).unwrap();
     }
 }

@@ -10,7 +10,7 @@ use crate::vm::register::Register;
 pub mod date;
 pub mod duration;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Allocation {
     pub ptr: NonNull<u8>,
     pub size: usize,

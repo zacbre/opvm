@@ -4,7 +4,7 @@ use crate::vm::program::Program;
 use nom::branch::alt;
 use nom::bytes::complete::*;
 use nom::combinator::{eof, opt, peek};
-use nom::multi::{many0, many1, separated_list0};
+use nom::multi::separated_list0;
 use nom::sequence::{delimited, preceded, terminated};
 use nom::IResult;
 

@@ -24,6 +24,31 @@ impl Instruction {
         }
     }
 
+    pub fn new_from_offsets(str: Vec<&str>) -> Self {
+        let pre_opcode = *str.get(0).unwrap();
+        let opcode = OpCode::from(pre_opcode);
+        if opcode == OpCode::Igl {
+            println!("Error: Unknown opcode: {:?}", str);
+        }
+        let mut stack: Stack<Field> = Stack::new();
+        for i in 1..str.len() {
+            let register = Register::from(str[i]);
+            match register {
+                Register::Unknown => {
+                    stack.push(Instruction::construct_field(str[i]));
+                }
+                _ => {
+                    stack.push(Field(Type::Register(register)));
+                }
+            }
+        }
+
+        Instruction {
+            opcode,
+            operand: stack,
+        }
+    }
+
     pub fn new_from_words(str: Vec<&str>) -> Self {
         let pre_opcode = *str.get(0).unwrap();
         let opcode = OpCode::from(pre_opcode);
@@ -50,6 +75,7 @@ impl Instruction {
     }
 
     pub fn construct_field(str: &str) -> Field {
+        // todo: why would I make this i64 and not byte?
         if str.contains("0x") {
             match i64::from_str_radix(str.trim_start_matches("0x"), 16) {
                 Ok(i) => {

@@ -1,4 +1,4 @@
-use crate::types::{Type, Allocation};
+use crate::types::{Allocation, Type};
 use crate::vm::error::Error;
 use crate::vm::field::Field;
 use crate::vm::heap::Heap;
@@ -270,14 +270,14 @@ impl Vm {
                     let allocation_size = match &to_alloc.0 {
                         Type::Register(r) => {
                             let value = self.registers.get(r.clone());
-                            value.to_i_or_u(&self)?
+                            value.to_u(&self)?
                         }
                         Type::UInt(u) => *u,
                         Type::Int(i) => *i as usize,
                         Type::String(s) => {
                             let key = s.as_str();
                             if self.data.contains_key(key) {
-                                self.data.get(key).unwrap().to_i_or_u(&self)?
+                                self.data.get(key).unwrap().to_u(&self)?
                             } else {
                                 return self.error(
                                     format!("Cannot parse '{}' as size for allocation!", key),
@@ -306,14 +306,8 @@ impl Vm {
                     let p = field.to_p(&self)?;
                     self.free_heap(&p)?;
                 }
-                OpCode::Cast => {
-                    /*let data = self.pop_operand(&mut instruction.operand)?;
-                    let register = self.pop_operand(&mut instruction.operand)?;
-                    let register = register.to_r(&self)?;
-                    let field = self.registers.get(r);
-                    let output = field.clone().cast(&self, CastType::from(data.to_s(&self)?.as_str()), ro)?;
-                    self.registers.set(r, output);*/
-                }
+                OpCode::Load => {}
+                OpCode::Store => {}
                 OpCode::Nop => (),
                 OpCode::Hlt => {
                     return Ok(());
@@ -440,28 +434,27 @@ impl Vm {
 
     fn allocate_heap(&mut self, size: usize) -> Result<Field, Error> {
         let mut heap = Heap::recover_poison(&self.heap);
-        let ptr = heap.allocate(size).map_err(
-            |_| {
-                self.error(
-                    format!("Cannot allocate heap at {}!", self.pc),
-                    Some(vec![Field::from(size)]),
-                )
-                .unwrap_err()
-            },
-        )?;
+        let ptr = heap.allocate(size).map_err(|_| {
+            self.error(
+                format!("Cannot allocate heap at {}!", self.pc),
+                Some(vec![Field::from(size)]),
+            )
+            .unwrap_err()
+        })?;
         let allocation = Allocation::new(ptr, size, 2);
         Ok(Field(Type::Pointer(allocation)))
     }
 
     fn free_heap(&mut self, allocation: &Allocation) -> Result<(), Error> {
         let mut heap = Heap::recover_poison(&self.heap);
-        heap.deallocate(allocation.ptr, allocation.size).map_err(|_| {
-            self.error(
-                format!("Cannot free heap at {}!", self.pc),
-                Some(vec![Field::from(allocation.ptr.as_ptr() as usize)]),
-            )
-            .unwrap_err()
-        })
+        heap.deallocate(allocation.ptr, allocation.size)
+            .map_err(|_| {
+                self.error(
+                    format!("Cannot free heap at {}!", self.pc),
+                    Some(vec![Field::from(allocation.ptr.as_ptr() as usize)]),
+                )
+                .unwrap_err()
+            })
     }
 
     fn get_input(&self) -> String {
@@ -625,9 +618,9 @@ mod test {
             hm,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
-        assert_eq!(vm.registers.rb.to_i_or_u(&vm)?, 4);
-        assert_eq!(vm.registers.rc.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 4);
+        assert_eq!(vm.registers.rb.to_u(&vm)?, 4);
+        assert_eq!(vm.registers.rc.to_u(&vm)?, 4);
         assert_eq!(vm.registers.rd.to_string(), "Uh OH!".to_string());
         Ok(())
     }
@@ -642,9 +635,9 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 4);
         assert_eq!(vm.stack.len(), 1);
-        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.pop_stack()?.to_u(&vm)?, 4);
         Ok(())
     }
 
@@ -660,8 +653,8 @@ mod test {
         )?;
 
         assert_eq!(vm.stack.len(), 0);
-        assert_eq!(vm.registers.rb.to_i_or_u(&vm)?, 4);
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.rb.to_u(&vm)?, 4);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 4);
         Ok(())
     }
 
@@ -676,7 +669,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 9);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 9);
 
         let vm = create_vm(
             vec![
@@ -686,7 +679,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 16);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 16);
         Ok(())
     }
 
@@ -701,7 +694,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 20);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 20);
         Ok(())
     }
 
@@ -716,7 +709,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 7);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 7);
         Ok(())
     }
 
@@ -731,7 +724,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 4);
         Ok(())
     }
 
@@ -746,7 +739,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 1);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 1);
         Ok(())
     }
 
@@ -763,7 +756,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.pop_stack()?.to_u(&vm)?, 4);
         Ok(())
     }
 
@@ -784,9 +777,9 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 4);
-        assert_eq!(vm.registers.rb.to_i_or_u(&vm)?, 9);
-        assert_eq!(vm.registers.rc.to_i_or_u(&vm)?, 8);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 4);
+        assert_eq!(vm.registers.rb.to_u(&vm)?, 9);
+        assert_eq!(vm.registers.rc.to_u(&vm)?, 8);
         Ok(())
     }
 
@@ -815,7 +808,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         Ok(())
     }
 
@@ -834,7 +827,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 5);
@@ -849,7 +842,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         Ok(())
     }
 
@@ -868,7 +861,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@notequal".to_string(), 5);
@@ -883,7 +876,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         Ok(())
     }
 
@@ -902,7 +895,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 5);
@@ -916,7 +909,7 @@ mod test {
             ],
             Some(hashmap),
         )?;
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@less".to_string(), 5);
@@ -930,7 +923,7 @@ mod test {
             ],
             Some(hashmap),
         )?;
-        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         Ok(())
     }
 
@@ -949,7 +942,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@equal".to_string(), 5);
@@ -963,7 +956,7 @@ mod test {
             ],
             Some(hashmap),
         )?;
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 5);
@@ -977,7 +970,7 @@ mod test {
             ],
             Some(hashmap),
         )?;
-        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         Ok(())
     }
 
@@ -998,7 +991,7 @@ mod test {
 
         println!("Step 2");
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         println!("Step 3");
 
         let mut hashmap = HashMap::new();
@@ -1014,7 +1007,7 @@ mod test {
             Some(hashmap),
         )?;
         println!("Step 4");
-        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         println!("Step 5");
         Ok(())
     }
@@ -1034,7 +1027,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        assert_ne!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
 
         let mut hashmap = HashMap::new();
         hashmap.insert("@greater".to_string(), 5);
@@ -1048,7 +1041,7 @@ mod test {
             ],
             Some(hashmap),
         )?;
-        assert_eq!(vm.registers.get(Register::Rc).to_i_or_u(&vm)?, 5);
+        assert_eq!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
         Ok(())
     }
 
@@ -1063,8 +1056,8 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
-        assert_eq!(vm.pop_stack()?.to_i_or_u(&vm)?, 4);
+        assert_eq!(vm.pop_stack()?.to_u(&vm)?, 4);
+        assert_eq!(vm.pop_stack()?.to_u(&vm)?, 4);
         Ok(())
     }
 
@@ -1079,7 +1072,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 0);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 0);
 
         let vm = create_vm(
             vec![
@@ -1090,7 +1083,7 @@ mod test {
             None,
         )?;
 
-        assert_eq!(vm.registers.ra.to_i_or_u(&vm)?, 110);
+        assert_eq!(vm.registers.ra.to_u(&vm)?, 110);
         Ok(())
     }
 

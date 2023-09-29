@@ -1,11 +1,13 @@
 use crate::lexer::token::{Token, TokenType};
 use crate::vm::instruction::Instruction;
 use crate::vm::program::Program;
+use crate::vm::register::{RegisterWithOffset, self, Register};
 use nom::branch::alt;
 use nom::bytes::complete::*;
-use nom::combinator::{eof, opt, peek};
-use nom::multi::separated_list0;
-use nom::sequence::{delimited, preceded, terminated};
+use nom::character::complete::one_of;
+use nom::combinator::{eof, opt, peek, value};
+use nom::multi::{many0, separated_list0};
+use nom::sequence::{delimited, preceded, terminated, pair};
 use nom::IResult;
 
 pub struct Lexer;
@@ -59,7 +61,26 @@ impl Lexer {
                     let to_parse = token.content.unwrap();
                     let parsed = parse_words(&to_parse);
                     match parsed {
-                        Ok((_, v)) => program.instructions.push(Instruction::new_from_words(v)),
+                        Ok((_, v)) => {
+                            let mut operands: Vec<RegisterWithOffset> = Vec::new();
+                            for item in &v {
+                                let (taken, output) = match_operands(item);
+                                match output {
+                                    Ok((_, v)) => {
+                                        
+                                        let register = RegisterWithOffset::new(
+                                            Register::from(taken),
+                                            output
+                                        );
+                                        operands.extend(v);
+                                    }
+                                    Err(e) => (),
+                                }
+                            }
+
+
+                            program.instructions.push(Instruction::new_from_words(v))
+                        }
                         Err(e) => println!("Error: {:?}", e),
                     }
                     pc += 1;
@@ -71,6 +92,14 @@ impl Lexer {
 
         program
     }
+}
+
+fn match_operands(i: &str) -> (&str, IResult<&str, Vec<(&str, char)>>) {
+    let (output, taken) = terminated(take_till(|c| c == '['), tag("["))(i)?;
+    (taken, many0(pair(
+        preceded(opt(match_whitespace), take_till(|c| "+-/*%]".contains(c))),
+        alt((one_of("+-/*%"), value(char::default(), one_of("]")))),
+    ))(output))
 }
 
 fn match_newline(i: &str) -> IResult<&str, &str> {
@@ -383,6 +412,24 @@ mod test {
             _main:
                 mov ra, 1
                 mov rb, 1
+        "#;
+
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let unwrapped = instructions.unwrap();
+        println!("{:?}", unwrapped.instructions);
+        assert_eq!(2, unwrapped.instructions.len());
+        assert_eq!(2, unwrapped.instructions[0].operand.len());
+    }
+
+    #[test]
+    fn can_parse_offsets() {
+        let assm = r#"
+        section .code
+            _main:
+                mov ra[ra-rb+rc], rb[r0]
+                mov ra[ra], rb[ra+rb]
+                mov ra[ra-2], rb[1]
         "#;
 
         let instructions = Lexer::new().process(assm.to_string());

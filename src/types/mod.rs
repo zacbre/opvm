@@ -5,7 +5,7 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::vm::register::Register;
+use crate::vm::register::{Register, RegisterWithOffset};
 
 pub mod date;
 pub mod duration;
@@ -51,6 +51,7 @@ pub enum Type {
     Bool(bool),
     Pointer(Allocation),
     Register(Register),
+    RegisterWithOffsets(Register, Vec<RegisterWithOffset>),
     Object(Box<dyn Object>),
 }
 

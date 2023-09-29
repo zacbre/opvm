@@ -13,7 +13,8 @@ fn main() {
     run(r#"
         mov rd,1
         call __println
-    "#.to_string());
+    "#
+    .to_string());
 }
 
 fn run(code: String) {
@@ -43,7 +44,7 @@ mod test {
 
     #[test]
     fn counter_10000() {
-        run( r#"
+        run(r#"
         section .code
             _main:
                 call __date_now_unix
@@ -84,13 +85,13 @@ mod test {
             _secs: " seconds"
             _sec: " second"
             _loop_times: 10000
-        "#.to_string());
+        "#
+        .to_string());
     }
 
     #[test]
     fn alloc() {
-        run(
-            r#"
+        run(r#"
         section .code
             _main:
                 alloc r0, 10
@@ -100,7 +101,6 @@ mod test {
         section .data
     
         "#
-            .to_string(),
-        );
+        .to_string());
     }
 }

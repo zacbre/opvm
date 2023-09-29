@@ -1,10 +1,10 @@
-use crate::types::{Object, Type, Allocation};
+use crate::types::{Allocation, Object, Type};
 use std::{
     fmt::{Display, Formatter},
-    ops::{Add, BitXor, Div, Mul, Rem, Sub}
+    ops::{Add, BitXor, Div, Mul, Rem, Sub},
 };
 
-use super::register::Register;
+use super::register::{Register, RegisterWithOffset};
 
 #[derive(Debug)]
 pub struct Field(pub Type);
@@ -21,6 +21,13 @@ impl Field {
             Type::Bool(b) => Field(Type::Bool(*b)),
             Type::Pointer(p) => Field(Type::Pointer(p.clone())),
             Type::Register(r) => Field(Type::Register(*r)),
+            Type::RegisterWithOffsets(r, o) => {
+                let mut offsets: Vec<RegisterWithOffset> = Vec::new();
+                for offset in o {
+                    offsets.push(offset.clone());
+                }
+                Field(Type::RegisterWithOffsets(*r, offsets))
+            }
             Type::Object(o) => Field(Type::Object((*o).clone())),
             //_ => Field::default(),
         }
@@ -38,7 +45,7 @@ impl Field {
         }
     }
 
-    pub fn to_i_or_u(&self, arg: &super::vm::Vm) -> Result<usize, super::error::Error> {
+    pub fn to_u(&self, arg: &super::vm::Vm) -> Result<usize, super::error::Error> {
         match self.0 {
             Type::UInt(u) => Ok(u),
             Type::Int(i) => Ok(i as usize),
@@ -71,20 +78,6 @@ impl Default for Field {
         Field(Type::Int(0))
     }
 }
-
-/*
-    Byte(u8),
-    Short(u16),
-    Int(i64),
-    UInt(usize),
-    Long(i128),
-    ULong(u128),
-    Float(f64),
-    Char(char),
-    String(String),
-    Bool(bool),
-    Pointer(*mut [usize]),
-*/
 
 impl From<u8> for Field {
     fn from(u: u8) -> Self {
@@ -177,6 +170,9 @@ impl Display for Field {
             Field(Type::Char(c)) => write!(f, "{}", c),
             Field(Type::String(ref s)) => write!(f, "{}", s),
             Field(Type::Register(r)) => write!(f, "{:?}", r),
+            Field(Type::RegisterWithOffsets(r, o)) => {
+                write!(f, "{:?} {:?}", r, o)
+            }
             Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
             //_ => write!(f, "{:?}", self),
         }

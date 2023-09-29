@@ -1,6 +1,10 @@
-use std::{alloc::Layout, ptr::NonNull, sync::{Arc, Mutex, MutexGuard}};
-use once_cell::sync::Lazy;
 use linked_list_allocator::Heap as heap;
+use once_cell::sync::Lazy;
+use std::{
+    alloc::Layout,
+    ptr::NonNull,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 const MAX_HEAP_SIZE: usize = 5000;
 static mut HEAP_MEM: [u8; MAX_HEAP_SIZE] = [0; MAX_HEAP_SIZE];
@@ -9,7 +13,12 @@ static mut HEAP_INSTANCE: Lazy<Arc<Mutex<Heap>>> = Lazy::new(|| {
     let heap = Arc::new(Mutex::new(Heap {
         allocator: heap::empty(),
     }));
-    unsafe { heap.lock().unwrap().allocator.init(HEAP_MEM.as_mut_ptr(), MAX_HEAP_SIZE); }
+    unsafe {
+        heap.lock()
+            .unwrap()
+            .allocator
+            .init(HEAP_MEM.as_mut_ptr(), MAX_HEAP_SIZE);
+    }
     heap
 });
 
@@ -29,7 +38,7 @@ impl Heap {
         unsafe {
             if HEAP_ALLOCATED {
                 HEAP_MEM = [0; MAX_HEAP_SIZE];
-            } 
+            }
         }
     }
 
@@ -48,15 +57,14 @@ impl Heap {
     }
 
     pub fn recover_poison<'a>(heap: &'a Arc<Mutex<Heap>>) -> MutexGuard<'a, Heap> {
-        let mut_heap =  heap.lock();
-        let data: MutexGuard<'a,Heap> = match mut_heap {
+        let mut_heap = heap.lock();
+        let data: MutexGuard<'a, Heap> = match mut_heap {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
         data
     }
 }
-
 
 #[cfg(test)]
 mod test {

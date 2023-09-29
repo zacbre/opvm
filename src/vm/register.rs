@@ -28,26 +28,40 @@ macro_rules! flag_register {
     };
 }
 
-// #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-// pub enum OffsetOperand {
-//     Default,
-//     Number(usize),
-//     Register(Register)
-// }
+#[derive(Debug)]
+pub struct RegisterWithOffset {
+    pub register: Register,
+    pub offsets: Vec<RegisterOffset>,
+}
 
-// impl OffsetOperand {
-//     pub fn resolve(&self, vm: &crate::vm::vm::Vm) -> Result<usize, Error> {
-//         let result = match self {
-//             &OffsetOperand::Number(n) => n,
-//             &OffsetOperand::Register(r) => {
-//                 let data = vm.registers.get(r);
-//                 data.to_i_or_u(vm)?
-//             },
-//             _ => 0
-//         };
-//         Ok(result)
-//     }
-// }
+impl RegisterWithOffset {
+    pub fn new(register: Register, offsets: Vec<RegisterOffset>) -> Self {
+        Self { register, offsets }
+    }
+}
+
+#[derive(Debug)]
+pub struct RegisterOffset {
+    pub offset: Field,
+    pub operand: RegisterOffsetOperandType
+}
+
+impl Clone for RegisterWithOffset {
+    fn clone(&self) -> Self {
+        Self { register: self.register, offsets: self.offsets.clone() }
+    }
+}
+
+impl Clone for RegisterOffset {
+    fn clone(&self) -> Self {
+        Self { offset: self.offset.underlying_data_clone(), operand: self.operand.clone() }
+    }
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
+pub enum RegisterOffsetOperandType {
+    Add,
+}
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
 pub enum Register {
@@ -96,31 +110,7 @@ impl Display for Register {
 
 impl Register {
     pub fn from(value: &str) -> Self {
-        let mut raw_register = value.to_string();
-        let offset: usize;
-        // let mut offset_type = OffsetOperand::Default;
-        // if raw_register.contains("[") && raw_register.contains("]") {
-        //     let register_name: IResult<&str,&str> = take_till(|c| c == '[')(value);
-        //     let (more, register_name) = register_name.unwrap();
-        //     raw_register = register_name.to_string();
-        //     let result: IResult<&str,&str> = delimited(
-        //         tag("["),
-        //         take_till(|c| c == ']'),
-        //         tag("]")
-        //     )(more);
-
-        //     let raw_offset = result.unwrap().1;
-        //     offset_type = match Register::match_register(raw_offset) {
-        //         Register::Unknown => {
-        //             offset = raw_offset.parse::<usize>().unwrap();
-        //             OffsetOperand::Number(offset)
-        //         }
-        //         r => {
-        //             OffsetOperand::Register(r)
-        //         }
-        //     };
-        // }
-        Register::match_register(raw_register.as_str())
+        Register::match_register(value)
     }
 
     pub fn match_register(str: &str) -> Register {
@@ -145,12 +135,6 @@ impl Register {
         }
     }
 }
-
-// impl From<Register> for Field {
-//     fn from(value: Register) -> Self {
-//         Field::R(value)
-//     }
-// }
 
 #[derive(Debug)]
 pub struct Registers {
@@ -207,11 +191,6 @@ impl Registers {
     }
 
     pub fn set(&mut self, r: Register, f: Field) {
-        // let f = match f {
-        //     Field::R(r) => self.get(r).clone(),
-        //     _ => f,
-        // };
-
         match r {
             Register::Ra => self.ra = f,
             Register::Rb => self.rb = f,
@@ -232,18 +211,6 @@ impl Registers {
             _ => {}
         }
     }
-
-    /*pub fn set_offset_for_p(vm: &mut Vm, register: Register, offset: OffsetOperand, f: Field) -> Result<(), Error> {
-        let data = vm.registers.get(register).to_p(&vm)?;
-        if !vm.heap.contains(data) {
-            return vm.error("Cannot set offset for allocation because memory has already been freed!".to_string(), Some(vec![f]));
-        }
-        let mut boxed = Heap::deref(data);
-        let number = offset.resolve(&vm)?;
-        boxed[number] = f.to_i_or_u(&vm)?;
-        Heap::reref(boxed);
-        Ok(())
-    }*/
 
     pub fn get(&self, p0: Register) -> &Field {
         match p0 {

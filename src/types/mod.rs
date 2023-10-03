@@ -5,7 +5,7 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::vm::register::{Register, RegisterWithOffset};
+use crate::vm::register::{Register, RegisterOffset, RegisterWithOffset};
 
 pub mod date;
 pub mod duration;
@@ -51,7 +51,7 @@ pub enum Type {
     Bool(bool),
     Pointer(Allocation),
     Register(Register),
-    RegisterWithOffsets(Register, Vec<RegisterWithOffset>),
+    RegisterWithOffsets(RegisterWithOffset),
     Object(Box<dyn Object>),
 }
 
@@ -191,6 +191,14 @@ impl PartialEq for Type {
             (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
             (Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
             (Self::Register(l0), Self::Register(r0)) => l0 == r0,
+            (Self::RegisterWithOffsets(l0), Self::RegisterWithOffsets(r0)) => {
+                for (l, r) in l0.offsets.iter().zip(r0.offsets.iter()) {
+                    if l != r {
+                        return false;
+                    }
+                }
+                l0.register.eq(&r0.register)
+            }
             _ => false,
         }
     }
@@ -209,6 +217,16 @@ impl PartialOrd for Type {
             (Self::Bool(l0), Self::Bool(r0)) => l0.partial_cmp(r0),
             (Self::Pointer(l0), Self::Pointer(r0)) => l0.partial_cmp(r0),
             (Self::Register(l0), Self::Register(r0)) => l0.partial_cmp(r0),
+            (Self::RegisterWithOffsets(l0), Self::RegisterWithOffsets(r0)) => {
+                // compare the offsets.
+                for (l, r) in l0.offsets.iter().zip(r0.offsets.iter()) {
+                    if l != r {
+                        return None;
+                    }
+                }
+                // if they are equal, then compare the registers
+                l0.register.partial_cmp(&r0.register)
+            }
             // Add additional cases as needed
             _ => None, // Handle cases where comparison is not possible
         }

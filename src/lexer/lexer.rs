@@ -1,13 +1,16 @@
 use crate::lexer::token::{Token, TokenType};
+use crate::vm::field::Field;
 use crate::vm::instruction::Instruction;
 use crate::vm::program::Program;
-use crate::vm::register::{RegisterWithOffset, self, Register};
+use crate::vm::register::{
+    self, Register, RegisterOffset, RegisterOffsetOperandType, RegisterWithOffset,
+};
 use nom::branch::alt;
 use nom::bytes::complete::*;
 use nom::character::complete::one_of;
 use nom::combinator::{eof, opt, peek, value};
 use nom::multi::{many0, separated_list0};
-use nom::sequence::{delimited, preceded, terminated, pair};
+use nom::sequence::{delimited, pair, preceded, terminated};
 use nom::IResult;
 
 pub struct Lexer;
@@ -62,24 +65,40 @@ impl Lexer {
                     let parsed = parse_words(&to_parse);
                     match parsed {
                         Ok((_, v)) => {
-                            let mut operands: Vec<RegisterWithOffset> = Vec::new();
+                            let mut offsets: Vec<Field> = Vec::new();
                             for item in &v {
-                                let (taken, output) = match_operands(item);
-                                match output {
-                                    Ok((_, v)) => {
-                                        
-                                        let register = RegisterWithOffset::new(
-                                            Register::from(taken),
-                                            output
-                                        );
-                                        operands.extend(v);
+                                if let Ok((left, prefix)) = match_operand_prefix(item) {
+                                    let output = match_operands(left);
+                                    match output {
+                                        Ok((_, v)) => {
+                                            offsets.push(Field(
+                                                crate::types::Type::RegisterWithOffsets(
+                                                    RegisterWithOffset::new(
+                                                        Register::from(prefix),
+                                                        v.iter()
+                                                            .map(|(a, b)| RegisterOffset {
+                                                                offset:
+                                                                    Instruction::construct_field(a),
+                                                                operand:
+                                                                    RegisterOffsetOperandType::from(
+                                                                        *b,
+                                                                    ),
+                                                            })
+                                                            .collect(),
+                                                    ),
+                                                ),
+                                            ));
+                                        }
+                                        Err(_) => panic!("Error parsing operands!"),
                                     }
-                                    Err(e) => (),
+                                } else if item != &v[0] {
+                                    offsets.push(Instruction::construct_field(item));
                                 }
                             }
 
-
-                            program.instructions.push(Instruction::new_from_words(v))
+                            program
+                                .instructions
+                                .push(Instruction::new_from_fields(v[0], offsets));
                         }
                         Err(e) => println!("Error: {:?}", e),
                     }
@@ -94,12 +113,15 @@ impl Lexer {
     }
 }
 
-fn match_operands(i: &str) -> (&str, IResult<&str, Vec<(&str, char)>>) {
-    let (output, taken) = terminated(take_till(|c| c == '['), tag("["))(i)?;
-    (taken, many0(pair(
+fn match_operand_prefix(i: &str) -> IResult<&str, &str> {
+    terminated(take_till(|c| c == '['), tag("["))(i)
+}
+
+fn match_operands(i: &str) -> IResult<&str, Vec<(&str, char)>> {
+    many0(pair(
         preceded(opt(match_whitespace), take_till(|c| "+-/*%]".contains(c))),
         alt((one_of("+-/*%"), value(char::default(), one_of("]")))),
-    ))(output))
+    ))(i)
 }
 
 fn match_newline(i: &str) -> IResult<&str, &str> {
@@ -267,7 +289,7 @@ fn parse_words_label_values(i: &str) -> IResult<&str, Vec<&str>> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::types::Type;
+    use crate::{types::Type, vm::field::Field};
 
     #[test]
     fn can_parse_directives() {
@@ -358,7 +380,7 @@ mod test {
     fn can_parse_commas() {
         let assm = r#"
         section .data
-            label: 1
+            _label: 1
         section .code
             _main:
                 mov ra,0
@@ -375,7 +397,7 @@ mod test {
     fn can_parse_commas_with_offsets() {
         let assm = r#"
         section .data
-            label: 1
+            _label: 1
         section .code
             _main:
                 mov ra[2],0
@@ -416,10 +438,18 @@ mod test {
 
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
-        let unwrapped = instructions.unwrap();
+        let mut unwrapped = instructions.unwrap();
         println!("{:?}", unwrapped.instructions);
         assert_eq!(2, unwrapped.instructions.len());
         assert_eq!(2, unwrapped.instructions[0].operand.len());
+        assert_eq!(
+            Field(Type::Int(1)),
+            unwrapped.instructions[0].operand.pop().unwrap()
+        );
+        assert_eq!(
+            Field(Type::Register(Register::Ra)),
+            unwrapped.instructions[0].operand.pop().unwrap()
+        );
     }
 
     #[test]
@@ -430,13 +460,121 @@ mod test {
                 mov ra[ra-rb+rc], rb[r0]
                 mov ra[ra], rb[ra+rb]
                 mov ra[ra-2], rb[1]
+                mov r2, rb[1]
         "#;
 
         let instructions = Lexer::new().process(assm.to_string());
         assert!(instructions.is_some());
-        let unwrapped = instructions.unwrap();
+        let mut unwrapped = instructions.unwrap();
         println!("{:?}", unwrapped.instructions);
-        assert_eq!(2, unwrapped.instructions.len());
+        assert_eq!(4, unwrapped.instructions.len());
         assert_eq!(2, unwrapped.instructions[0].operand.len());
+        assert_eq!(2, unwrapped.instructions[1].operand.len());
+        assert_eq!(2, unwrapped.instructions[2].operand.len());
+        assert_eq!(2, unwrapped.instructions[3].operand.len());
+
+        //mov ra[ra-rb+rc], rb[r0]
+        assert_eq!(
+            Field(Type::RegisterWithOffsets(RegisterWithOffset::new(
+                Register::Rb,
+                vec![RegisterOffset {
+                    offset: Field(Type::Register(Register::R0)),
+                    operand: RegisterOffsetOperandType::None
+                }]
+            ))),
+            unwrapped.instructions[0].operand.pop().unwrap()
+        );
+        assert_eq!(
+            Field(Type::RegisterWithOffsets(RegisterWithOffset::new(
+                Register::Ra,
+                vec![
+                    RegisterOffset {
+                        offset: Field(Type::Register(Register::Ra)),
+                        operand: RegisterOffsetOperandType::Sub
+                    },
+                    RegisterOffset {
+                        offset: Field(Type::Register(Register::Rb)),
+                        operand: RegisterOffsetOperandType::Add
+                    },
+                    RegisterOffset {
+                        offset: Field(Type::Register(Register::Rc)),
+                        operand: RegisterOffsetOperandType::None
+                    }
+                ]
+            ))),
+            unwrapped.instructions[0].operand.pop().unwrap()
+        );
+
+        // mov ra[ra], rb[ra+rb]
+        assert_eq!(
+            Field(Type::RegisterWithOffsets(RegisterWithOffset::new(
+                Register::Rb,
+                vec![
+                    RegisterOffset {
+                        offset: Field(Type::Register(Register::Ra)),
+                        operand: RegisterOffsetOperandType::Add
+                    },
+                    RegisterOffset {
+                        offset: Field(Type::Register(Register::Rb)),
+                        operand: RegisterOffsetOperandType::None
+                    }
+                ]
+            ))),
+            unwrapped.instructions[1].operand.pop().unwrap()
+        );
+        assert_eq!(
+            Field(Type::RegisterWithOffsets(RegisterWithOffset::new(
+                Register::Ra,
+                vec![RegisterOffset {
+                    offset: Field(Type::Register(Register::Ra)),
+                    operand: RegisterOffsetOperandType::None
+                }]
+            ))),
+            unwrapped.instructions[1].operand.pop().unwrap()
+        );
+
+        // mov ra[ra-2], rb[1]
+        assert_eq!(
+            Field(Type::RegisterWithOffsets(RegisterWithOffset::new(
+                Register::Rb,
+                vec![RegisterOffset {
+                    offset: Field(Type::Int(1)),
+                    operand: RegisterOffsetOperandType::None
+                }]
+            ))),
+            unwrapped.instructions[2].operand.pop().unwrap()
+        );
+        assert_eq!(
+            Field(Type::RegisterWithOffsets(RegisterWithOffset::new(
+                Register::Ra,
+                vec![
+                    RegisterOffset {
+                        offset: Field(Type::Register(Register::Ra)),
+                        operand: RegisterOffsetOperandType::Sub
+                    },
+                    RegisterOffset {
+                        offset: Field(Type::Int(2)),
+                        operand: RegisterOffsetOperandType::None
+                    }
+                ]
+            ))),
+            unwrapped.instructions[2].operand.pop().unwrap()
+        );
+
+        // mov r2, rb[1]
+        assert_eq!(
+            Field(Type::RegisterWithOffsets(RegisterWithOffset::new(
+                Register::Rb,
+                vec![RegisterOffset {
+                    offset: Field(Type::Int(1)),
+                    operand: RegisterOffsetOperandType::None
+                }]
+            ))),
+            unwrapped.instructions[3].operand.pop().unwrap()
+        );
+        assert_eq!(
+            Field(Type::Register(Register::R2)),
+            unwrapped.instructions[3].operand.pop().unwrap()
+        );
     }
 }

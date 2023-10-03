@@ -6,8 +6,8 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-const MAX_HEAP_SIZE: usize = 5000;
-static mut HEAP_MEM: [u8; MAX_HEAP_SIZE] = [0; MAX_HEAP_SIZE];
+const MAX_HEAP_SIZE: usize = 100;
+pub static mut HEAP_MEM: [u8; MAX_HEAP_SIZE] = [0; MAX_HEAP_SIZE];
 static mut HEAP_ALLOCATED: bool = false;
 static mut HEAP_INSTANCE: Lazy<Arc<Mutex<Heap>>> = Lazy::new(|| {
     let heap = Arc::new(Mutex::new(Heap {

@@ -17,7 +17,7 @@ fn main() {
     .to_string());
 }
 
-fn run(code: String) {
+fn run(code: String) -> Vm {
     let lexer = Lexer::new();
     let program = lexer.process(code).unwrap();
     let mut vm = Vm::new(true);
@@ -36,6 +36,8 @@ fn run(code: String) {
         }
         Ok(_) => (),
     }
+
+    vm
 }
 
 #[cfg(test)]
@@ -47,6 +49,7 @@ mod test {
         run(r#"
         section .code
             _main:
+                call __dbg_print
                 call __date_now_unix
                 push r0
                 mov ra,0
@@ -102,5 +105,24 @@ mod test {
     
         "#
         .to_string());
+    }
+
+    #[test]
+    fn assign_to_pointer() {
+        let vm = run(r#"
+        section .code
+            _main:
+                alloc ra, 10
+                call __dbg_heap
+                mov ra[2], 5
+                call __dbg_heap
+                mov r3, ra[2]
+                call __dbg_print
+                call __dbg_heap
+                free ra
+        section .data
+        "#
+        .to_string());
+        let r0 = vm.registers.r1;
     }
 }

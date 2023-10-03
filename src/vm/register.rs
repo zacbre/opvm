@@ -1,5 +1,8 @@
 use super::field::Field;
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 macro_rules! flag_register {
     ($e:expr,bool) => {
@@ -43,24 +46,78 @@ impl RegisterWithOffset {
 #[derive(Debug)]
 pub struct RegisterOffset {
     pub offset: Field,
-    pub operand: RegisterOffsetOperandType
+    pub operand: RegisterOffsetOperandType,
 }
 
 impl Clone for RegisterWithOffset {
     fn clone(&self) -> Self {
-        Self { register: self.register, offsets: self.offsets.clone() }
+        Self {
+            register: self.register,
+            offsets: self.offsets.clone(),
+        }
     }
 }
 
 impl Clone for RegisterOffset {
     fn clone(&self) -> Self {
-        Self { offset: self.offset.underlying_data_clone(), operand: self.operand.clone() }
+        Self {
+            offset: self.offset.underlying_data_clone(),
+            operand: self.operand.clone(),
+        }
+    }
+}
+
+impl PartialEq for RegisterOffset {
+    fn eq(&self, other: &Self) -> bool {
+        self.offset == other.offset && self.operand == other.operand
     }
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum RegisterOffsetOperandType {
+    None,
     Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+}
+impl RegisterOffsetOperandType {
+    pub(crate) fn apply(&self, final_value: &mut Field, i: Field) {
+        match self {
+            RegisterOffsetOperandType::None => {
+                *final_value = i;
+            }
+            RegisterOffsetOperandType::Add => {
+                *final_value = final_value.underlying_data_clone() + i;
+            }
+            RegisterOffsetOperandType::Sub => {
+                *final_value = final_value.underlying_data_clone() - i;
+            }
+            RegisterOffsetOperandType::Mul => {
+                *final_value = final_value.underlying_data_clone() * i;
+            }
+            RegisterOffsetOperandType::Div => {
+                *final_value = final_value.underlying_data_clone() / i;
+            }
+            RegisterOffsetOperandType::Rem => {
+                *final_value = final_value.underlying_data_clone() % i;
+            }
+        }
+    }
+}
+
+impl From<char> for RegisterOffsetOperandType {
+    fn from(c: char) -> Self {
+        match c {
+            '+' => RegisterOffsetOperandType::Add,
+            '-' => RegisterOffsetOperandType::Sub,
+            '*' => RegisterOffsetOperandType::Mul,
+            '/' => RegisterOffsetOperandType::Div,
+            '%' => RegisterOffsetOperandType::Rem,
+            _ => RegisterOffsetOperandType::None,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
@@ -82,6 +139,14 @@ pub enum Register {
     R8,
     R9,
     Unknown,
+}
+
+impl FromStr for Register {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Register::match_register(s))
+    }
 }
 
 impl Display for Register {

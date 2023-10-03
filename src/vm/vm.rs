@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::{cmp, io};
 
 use super::builtin::{self, BuiltIn};
+use super::register::{RegisterOffsetOperandType, RegisterWithOffset};
 
 #[derive(Debug)]
 pub struct Vm {
@@ -37,6 +38,7 @@ impl Vm {
                 Box::new(builtin::DateNowUnix),
                 Box::new(builtin::DateNow),
                 Box::new(builtin::Dbg),
+                Box::new(builtin::DbgPtr),
             ],
             instructions: vec![],
             labels: HashMap::new(),
@@ -75,59 +77,80 @@ impl Vm {
             for operand in tmp_ins.operand.to_vec() {
                 operands.push(Field::from(operand.underlying_data_clone()));
             }
-            let mut instruction: Instruction = Instruction::new(tmp_ins.opcode, operands);
+            let mut instruction: Instruction =
+                Instruction::new_from_fields(tmp_ins.opcode.into(), operands);
             match instruction.opcode {
                 OpCode::Move => {
                     let data = self.pop_operand(&mut instruction.operand)?;
                     let register = self.pop_operand(&mut instruction.operand)?;
-                    let r = register.to_r(&self)?;
-                    match &data {
-                        // &Field(Type::Char(c)) if operand != OffsetOperand::Default => {
-                        //     Registers::set_offset_for_p(self, r, operand, Field::from(c))?;
-                        // }
-                        // Field(Type::String(s)) if operand != OffsetOperand::Default => {
-                        //     if self.data.contains_key(s.as_str()) {
-                        //         self.registers.set(r, self.data.get(s.as_str()).unwrap().clone());
-                        //     } else {
-                        //         if s.len() == 1 {
-                        //             Registers::set_offset_for_p(self, r, operand, Field::from(s.as_str()))?;
-                        //         } else {
-                        //             return self.error(format!("Cannot find symbol '{}' at {}!", s, self.pc), Some(vec![data]));
-                        //         }
-                        //     }
-                        // }
-                        Field(Type::String(s)) => {
-                            if self.data.contains_key(s.as_str()) {
-                                self.registers.set(
-                                    r,
-                                    self.data.get(s.as_str()).unwrap().underlying_data_clone(),
-                                );
-                            } else {
-                                if s.len() == 1 {
-                                    let char = s.chars().nth(0).unwrap();
-                                    self.registers.set(r, Field::from(char));
-                                } else {
-                                    return self.error(
-                                        format!("Cannot find symbol '{}' at {}!", s, self.pc),
-                                        Some(vec![data]),
+                    let r_result = register.to_r(&self);
+                    if r_result.is_ok() {
+                        let r = r_result.unwrap();
+                        match &data {
+                            Field(Type::String(s)) => {
+                                if self.data.contains_key(s.as_str()) {
+                                    self.registers.set(
+                                        r,
+                                        self.data.get(s.as_str()).unwrap().underlying_data_clone(),
                                     );
+                                } else {
+                                    if s.len() == 1 {
+                                        let char = s.chars().nth(0).unwrap();
+                                        self.registers.set(r, Field::from(char));
+                                    } else {
+                                        return self.error(
+                                            format!("Cannot find symbol '{}' at {}!", s, self.pc),
+                                            Some(vec![data]),
+                                        );
+                                    }
                                 }
                             }
+                            Field(Type::Register(r2)) => {
+                                self.registers
+                                    .set(r, self.registers.get(*r2).underlying_data_clone());
+                            }
+                            Field(Type::RegisterWithOffsets(r2)) => {
+                                let source_data = self.get_source_data(r2)?;
+                                self.registers.set(r, source_data);
+                            }
+                            _ => self.registers.set(r, data),
                         }
-                        // &Field(Type::Int(i)) if operand != OffsetOperand::Default => {
-                        //     Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
-                        // }
-                        // &Field::U(i) if operand != OffsetOperand::Default => {
-                        //     Registers::set_offset_for_p(self, r, operand, Field::from(i))?;
-                        // }
-                        // &Field::L(l) if operand != OffsetOperand::Default => {
-                        //     Registers::set_offset_for_p(self, r, operand, Field::from(l))?;
-                        // }
-                        Field(Type::Register(r2)) => {
-                            self.registers
-                                .set(r, self.registers.get(*r2).underlying_data_clone());
+                    } else {
+                        // get register with offset.
+                        let rwo = register.to_rwo(&self)?;
+                        match &data {
+                            Field(Type::String(s)) => {
+                                if self.data.contains_key(s.as_str()) {
+                                    self.set_dest_data(
+                                        &rwo,
+                                        self.data.get(s.as_str()).unwrap().underlying_data_clone(),
+                                    )?;
+                                } else {
+                                    if s.len() == 1 {
+                                        let char = s.chars().nth(0).unwrap();
+                                        self.set_dest_data(&rwo, Field::from(char))?;
+                                    } else {
+                                        return self.error(
+                                            format!("Cannot find symbol '{}' at {}!", s, self.pc),
+                                            Some(vec![data]),
+                                        );
+                                    }
+                                }
+                            }
+                            Field(Type::Register(r2)) => {
+                                self.set_dest_data(
+                                    &rwo,
+                                    self.registers.get(*r2).underlying_data_clone(),
+                                )?;
+                            }
+                            Field(Type::RegisterWithOffsets(r2)) => {
+                                let source_data = self.get_source_data(r2)?;
+                                self.set_dest_data(&rwo, source_data)?;
+                            }
+                            _ => {
+                                self.set_dest_data(&rwo, data)?;
+                            }
                         }
-                        _ => self.registers.set(r, data),
                     }
                 }
                 OpCode::Push => {
@@ -186,7 +209,11 @@ impl Vm {
                     } else {
                         for func in &self.builtins {
                             if func.get_name() == label.to_string() {
-                                let result = func.call(&mut self.registers, &mut self.stack);
+                                let result = func.call(
+                                    &mut self.registers,
+                                    &mut self.stack,
+                                    &mut self.instructions,
+                                );
                                 self.registers.r0 = result;
                                 break;
                             }
@@ -441,7 +468,7 @@ impl Vm {
             )
             .unwrap_err()
         })?;
-        let allocation = Allocation::new(ptr, size, 2);
+        let allocation = Allocation::new(ptr, size, 64);
         Ok(Field(Type::Pointer(allocation)))
     }
 
@@ -589,6 +616,80 @@ impl Vm {
         };
 
         self.registers.set(r, r1_data ^ data2);
+
+        Ok(())
+    }
+
+    fn get_source_data(&mut self, source: &RegisterWithOffset) -> Result<Field, Error> {
+        let mut field = Field::default();
+        let mut previous_operand = RegisterOffsetOperandType::None;
+        for item in &source.offsets {
+            match item.offset {
+                Field(Type::Int(_)) => {
+                    previous_operand.apply(&mut field, item.offset.underlying_data_clone());
+                }
+                Field(Type::Register(rv)) => {
+                    let register_value = self.registers.get(rv).underlying_data_clone();
+                    previous_operand.apply(&mut field, register_value);
+                }
+                _ => {
+                    return Err(self
+                        .error(
+                            format!("Cannot use '{}' as offset at {}!", item.offset, self.pc),
+                            Some(vec![item.offset.underlying_data_clone()]),
+                        )
+                        .unwrap_err());
+                }
+            }
+            previous_operand = item.operand.clone();
+        }
+
+        Ok(field)
+    }
+
+    fn set_dest_data(&mut self, dest: &RegisterWithOffset, data: Field) -> Result<(), Error> {
+        let offset = self.get_source_data(dest)?;
+
+        let register_for_data = self.registers.get(dest.register);
+        match register_for_data {
+            Field(Type::Pointer(p)) => {
+                println!("Offset: {:?}", offset);
+                println!("Pointer: {:p}", p.ptr.as_ptr());
+                let value = unsafe { p.ptr.as_ptr().offset(offset.to_u(&self)? as isize) };
+                println!("Value: {:p}", value);
+                let mut bytes = data.to_b(&self)?;
+                println!("Bytes: {:?}", bytes);
+                unsafe {
+                    let bytes_ptr = bytes.as_mut_ptr();
+                    bytes_ptr.copy_to_nonoverlapping(value, bytes.len());
+                }
+                //self.registers.set(dest.register, Field(Type::Byte(unsafe { value.read() })));
+            }
+            Field(Type::String(s)) => {
+                let offset = offset.to_u(&self)?;
+                let new_string = data.to_string();
+                let new_value = if new_string.len() < offset + new_string.len() {
+                    format!("{}{}", &s[offset..], new_string)
+                } else {
+                    format!(
+                        "{}{}{}",
+                        &s[..offset],
+                        new_string,
+                        &s[offset + new_string.len()..]
+                    )
+                };
+                self.registers.set(dest.register, Field::from(new_value));
+            }
+            _ => {
+                return self.error(
+                    format!(
+                        "Cannot use '{}' as offset at {}!",
+                        register_for_data, self.pc
+                    ),
+                    Some(vec![register_for_data.underlying_data_clone()]),
+                );
+            }
+        }
 
         Ok(())
     }
@@ -1209,15 +1310,15 @@ mod test {
     where
         Field: From<T>,
     {
-        Instruction::new(opcode, vec![Field::from(item)])
+        Instruction::new_from_fields(opcode.into(), vec![Field::from(item)])
     }
 
     fn ins_vec(opcode: OpCode, items: Vec<Field>) -> Instruction {
-        Instruction::new(opcode, items)
+        Instruction::new_from_fields(opcode.into(), items)
     }
 
     fn ins_e(opcode: OpCode) -> Instruction {
-        Instruction::new(opcode, vec![])
+        Instruction::new_from_fields(opcode.into(), vec![])
     }
 
     fn create_vm_with_data(

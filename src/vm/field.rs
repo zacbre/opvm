@@ -4,7 +4,7 @@ use std::{
     ops::{Add, BitXor, Div, Mul, Rem, Sub},
 };
 
-use super::register::{Register, RegisterWithOffset};
+use super::register::{Register, RegisterOffset, RegisterWithOffset};
 
 #[derive(Debug)]
 pub struct Field(pub Type);
@@ -21,23 +21,43 @@ impl Field {
             Type::Bool(b) => Field(Type::Bool(*b)),
             Type::Pointer(p) => Field(Type::Pointer(p.clone())),
             Type::Register(r) => Field(Type::Register(*r)),
-            Type::RegisterWithOffsets(r, o) => {
-                let mut offsets: Vec<RegisterWithOffset> = Vec::new();
-                for offset in o {
+            Type::RegisterWithOffsets(r) => {
+                let mut offsets: Vec<RegisterOffset> = Vec::new();
+                for offset in &r.offsets {
                     offsets.push(offset.clone());
                 }
-                Field(Type::RegisterWithOffsets(*r, offsets))
+                Field(Type::RegisterWithOffsets(RegisterWithOffset {
+                    register: r.register,
+                    offsets,
+                }))
             }
             Type::Object(o) => Field(Type::Object((*o).clone())),
             //_ => Field::default(),
         }
     }
+
     pub fn to_r(&self, arg: &&mut super::vm::Vm) -> Result<Register, super::error::Error> {
         match self.0 {
             Type::Register(r) => Ok(r),
             _ => {
                 let err = arg.error(
                     "Value is not a register!".to_string(),
+                    Some(vec![self.underlying_data_clone()]),
+                );
+                Err(err.unwrap_err())
+            }
+        }
+    }
+
+    pub fn to_rwo(
+        &self,
+        arg: &&mut super::vm::Vm,
+    ) -> Result<RegisterWithOffset, super::error::Error> {
+        match &self.0 {
+            Type::RegisterWithOffsets(r) => Ok(r.clone()),
+            _ => {
+                let err = arg.error(
+                    "Value is not a register with offset!".to_string(),
                     Some(vec![self.underlying_data_clone()]),
                 );
                 Err(err.unwrap_err())
@@ -59,9 +79,25 @@ impl Field {
         }
     }
 
-    pub fn to_p(&self, arg: &&mut super::vm::Vm) -> Result<&Allocation, super::error::Error> {
+    pub fn to_p(&self, arg: &super::vm::Vm) -> Result<&Allocation, super::error::Error> {
         match &self.0 {
             Type::Pointer(p) => Ok(p),
+            _ => {
+                let err = arg.error(
+                    "Value is not a pointer!".to_string(),
+                    Some(vec![self.underlying_data_clone()]),
+                );
+                Err(err.unwrap_err())
+            }
+        }
+    }
+
+    pub fn to_b(&self, arg: &super::vm::Vm) -> Result<Vec<u8>, super::error::Error> {
+        match &self.0 {
+            Type::Byte(b) => Ok(vec![*b]),
+            Type::Int(b) => Ok(b.to_ne_bytes().to_vec()),
+            Type::UInt(b) => Ok(b.to_ne_bytes().to_vec()),
+            Type::String(b) => Ok(b.as_bytes().to_vec()),
             _ => {
                 let err = arg.error(
                     "Value is not a pointer!".to_string(),
@@ -170,8 +206,8 @@ impl Display for Field {
             Field(Type::Char(c)) => write!(f, "{}", c),
             Field(Type::String(ref s)) => write!(f, "{}", s),
             Field(Type::Register(r)) => write!(f, "{:?}", r),
-            Field(Type::RegisterWithOffsets(r, o)) => {
-                write!(f, "{:?} {:?}", r, o)
+            Field(Type::RegisterWithOffsets(r)) => {
+                write!(f, "{:?}", r)
             }
             Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
             //_ => write!(f, "{:?}", self),

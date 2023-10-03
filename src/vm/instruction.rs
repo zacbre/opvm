@@ -11,61 +11,14 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    #[allow(dead_code)]
-    pub fn new(opcode: OpCode, operand: Vec<Field>) -> Self {
+    pub fn new_from_fields(opcode: &str, fields: Vec<Field>) -> Self {
+        let opcode = OpCode::from(opcode);
+        if opcode == OpCode::Igl {
+            println!("Error: Unknown opcode: {:?}", opcode);
+        }
         let mut stack: Stack<Field> = Stack::new();
-        for field in operand {
+        for field in fields {
             stack.push(field);
-        }
-
-        Instruction {
-            opcode,
-            operand: stack,
-        }
-    }
-
-    pub fn new_from_offsets(str: Vec<&str>) -> Self {
-        let pre_opcode = *str.get(0).unwrap();
-        let opcode = OpCode::from(pre_opcode);
-        if opcode == OpCode::Igl {
-            println!("Error: Unknown opcode: {:?}", str);
-        }
-        let mut stack: Stack<Field> = Stack::new();
-        for i in 1..str.len() {
-            let register = Register::from(str[i]);
-            match register {
-                Register::Unknown => {
-                    stack.push(Instruction::construct_field(str[i]));
-                }
-                _ => {
-                    stack.push(Field(Type::Register(register)));
-                }
-            }
-        }
-
-        Instruction {
-            opcode,
-            operand: stack,
-        }
-    }
-
-    pub fn new_from_words(str: Vec<&str>) -> Self {
-        let pre_opcode = *str.get(0).unwrap();
-        let opcode = OpCode::from(pre_opcode);
-        if opcode == OpCode::Igl {
-            println!("Error: Unknown opcode: {:?}", str);
-        }
-        let mut stack: Stack<Field> = Stack::new();
-        for i in 1..str.len() {
-            let register = Register::from(str[i]);
-            match register {
-                Register::Unknown => {
-                    stack.push(Instruction::construct_field(str[i]));
-                }
-                _ => {
-                    stack.push(Field(Type::Register(register)));
-                }
-            }
         }
 
         Instruction {
@@ -83,6 +36,12 @@ impl Instruction {
                 }
                 Err(_) => (),
             }
+        }
+
+        match str.parse::<Register>() {
+            Ok(i) if i == Register::Unknown => (),
+            Ok(i) => return Field(Type::Register(i)),
+            Err(_) => (),
         }
 
         match str.parse::<i64>() {

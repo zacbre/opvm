@@ -113,7 +113,6 @@ impl Vm {
                             }
                             Field(Type::RegisterWithOffsets(r2)) => {
                                 let source_data = self.get_source_data(r2)?;
-                                println!("source_data: {:?}", source_data);
                                 self.registers.set(r, source_data);
                             }
                             _ => self.registers.set(r, data),
@@ -356,6 +355,16 @@ impl Vm {
                         format!("ILLEGAL instruction encountered at {}.", self.pc),
                         None,
                     );
+                }
+                OpCode::Assert => {
+                    self.test(&mut instruction)?;
+                    if !self.registers.check_equals_flag() {
+                        return self.error(
+                            format!("Assertion failed at {}.", self.pc),
+                            None
+                        );
+                    }
+                    self.registers.reset_flags();
                 }
             }
             self.pc += 1;
@@ -1126,10 +1135,7 @@ mod test {
             Some(hashmap),
         )?;
 
-        println!("Step 2");
-
         assert_ne!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
-        println!("Step 3");
 
         let mut hashmap = HashMap::new();
         hashmap.insert("less".to_string(), 5);
@@ -1143,9 +1149,7 @@ mod test {
             ],
             Some(hashmap),
         )?;
-        println!("Step 4");
         assert_eq!(vm.registers.get(Register::Rc).to_u(&vm)?, 5);
-        println!("Step 5");
         Ok(())
     }
 

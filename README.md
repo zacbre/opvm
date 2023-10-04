@@ -1,5 +1,5 @@
 # opvm
-opvm is a simple stack based virtual machine written in rust.
+opvm is a register based virtual machine written in rust.
 
 ## Usage
 Check main.rs to see how it's used.
@@ -7,138 +7,244 @@ Check main.rs to see how it's used.
 ## Examples
 ### Hello World:
 ```asm
-push "Hello, World!"
-print
+mov rd, _hello_world
+call __println
+
+section .data
+    _hello_world: "Hello, World!"
 ```
 Output:
 ```Hello, World!```
 ### Advanced Hello World:
 ```asm
-push "Hello"
-push ","
-concat
-push " "
-concat
-push "World!"
-concat
-print
+mov rd, _hello
+mov re, _world
+call __concat
+mov rd, r0
+call __println
+
+section .data
+    _hello: "Hello, "
+    _world: "World!"
 ```
 Output:
 ```Hello, World!```
 
-### Swap stack items
-This will swap the top 2 stack items with each other.
+### Push to stack/pop from stack
+opvm comes with a stack, and you can push/pop to/from it.
 ```asm
-push 0
-push 1
-print
-print
+mov ra, 128
+push ra
+pop rd
+call __println
 ```
 Output:
 ```
-1
-0
+128
 ```
 ### Duplicate top of stack:
 ```asm
-push 42
+mov ra, 128
+push ra
 dup
-print
-print
+pop rb
+pop rd
+call __println
 ```
 Output:
 ```
-42
-42
+128
 ```
 
-### Basic increment/decrement
+### Heap
+opvm includes a heap that can be allocated to.
 ```asm
-push 5
-inc
-dup
-print
-dec
-print
+alloc ra, 10
+mov ra[0], 'h'
+mov ra[1], 'e'
+mov ra[2], 'l'
+mov ra[3], 'l'
+mov ra[4], 'o'
+mov ra[5], '!'
+mov rd, ra
+call __println
+free ra
 ```
 Output:
 ```
-6
+hello!
+```
+
+### Basic arithmetic
+```asm
+; add
+mov ra, 10
+mov rb, 10
+add ra, rb
+mov rd, ra
+call __println
+
+; sub
+mov ra, 10
+mov rb, 5
+sub ra, rb
+mov rd, ra
+call __println
+
+; mul
+mov ra, 10
+mov rb, 10
+mul ra, rb
+mov rd, ra
+call __println
+
+; div
+mov ra, 10
+mov rb, 5
+div ra, rb
+mov rd, ra
+call __println
+
+; rem
+mov ra, 10
+mov rb, 6
+mod ra, rb
+mov rd, ra
+call __println
+
+```
+Output:
+```
+20
 5
+100
+2
+4
 ```
 
-### Loopy:
-This program loops 5 times while counting the amount of loops it's done. It also has the ability to detect if the loop is > 1, and it will print a different string for how many loops were done.
+### Program Flow:
+opvm supports labels and conditional jump statements to allow for dynamic program flow.
 ```asm
-#data
-    .multi " loops!"            ; define our string for > 1 loops
-    .single " loop!"            ; define our string for a single loop
-    .looptimes 5                ; amount of times we are going to loop
-#code
-    .main
-        push 0                  ; push 0 for start of loop counter
-        jmp @loop               ; jump to start of the program
-    .decideloopy
-        dup                     ; duplicate counter
-        push 1                  ; push 1 to compare counter
-        jg @multi               ; compare counter, if 1, print single
-        push @single            ; push our single string for printing
+_main:
+    mov ra, 10
+    jmp _end
+    mov ra, 5
+_end:
+    assert ra, 10
+```
+
+### Builtins
+opvm includes built in functions that can be injected into the VM to be called by the `call` opcode.
+Here's some examples of existing builtins:
+```asm
+; unix timestamp
+call __date_now_unix
+mov rd, r0
+call __println
+```
+Output (will be different due to the current time):
+```
+1696444553
+```
+`__println` and `__print` are also builtins.
+
+### Debugging
+These items will help you debug your program.
+```asm
+call __dbg_heap
+call __dbg_print
+```
+
+### Error Handling
+opvm comes with a built in stack trace generator that will tell you exactly where the code failed.
+```asm
+mov ra, 10
+mov rb, 20
+mov rc, 31
+add ra, rb
+assert ra, rc
+```
+Output:
+```
+Error: Assertion failed at 4.
+===== Stack Trace =====
+0	 | mov ra, 10
+1	 | mov rb, 20
+2	 | mov rc, 31
+3	 | add ra, rb
+4	 | assert ra, rc <-- error occurred here
+===== App Stack =====
+```
+
+### Objects
+`todo`
+
+### Example: Random Password Generator
+This program will generate a random set of passwords
+```asm
+section .data
+    _chars: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    _len: 10
+    
+section .code
+    _main:
+        call _generate_password
+        add r9, 1                   ; add 1 to r9 (amount of times password generated)
+        test r9, 5                  ; compare r9 to 5, set flags
+        jl _main                    ; if r9 < 5, jump back to _main
+        jmp _stop                   ; unconditionally jmp to _stop
+    _clamp_numbers:
+        call __random               ; generate a random between 0 and 1
+        mov r1, 62                  ; maximum number = 62
+        mul r0, r1                  ; multiply random number by 62
+        call __floor                 ; round down to nearest integer
         ret
-    .multi
-        push @multi             ; push our multi string for printing
+    _generate_password:
+        alloc ra, _len              ; allocate _len bytes to ra
+        mov rb, _chars              ; copy _chars to rb
+        mov rc, 0                   ; copy 0 to rc
+        mov r5, _len                ; copy _len to r5
+    _loop:
+        call _clamp_numbers         ; r0 = return of _clamp_numbers
+        mov ra[rc], rb[r0]          ; copy rb[r0] offset (rb is a pointer to _chars
+        add rc, 1                   ; add 1 to rc
+        test rc, r5                 ; compare rc to r5, set flags
+        jl _loop                    ; if rc < r5, jump back to _loop
+        mov rd, ra                  ; copy ra to rd
+        call __println              ; print rd
+        free ra                     ; free memory allocation at ra
         ret
-    .loop
-        inc                     ; increment loop counter by 1
-        dup                     ; duplicate loop counter for printing
-        call @decideloopy       ; call into our .decideloopy function
-        concat                  ; concat what text we decided on
-        print                   ; X [loop|loops]!
-        dup                     ; duplicate loop counter for comparing
-        push @looptimes         ; push number of loops we expect
-        jl @loop                ; less than expected, jump back to .loop to keep looping
+    _stop:                          ; end of program
 ```
 
-Output:
+Output (will vary since it is random):
 ```
-1 loop!
-2 loops!
-3 loops!
-4 loops!
-5 loops!
+1a3LzZbetj
+GceTC9mODK
+jg0dIDEjAR
+56P8TQdVrO
+5IbpWd9YDZ
 ```
 
-### Print stack size 
-```asm
-push 0
-dup
-dup
-dup
-dup
-load $__stack_size
-push "stack size is: "
-swap
-concat
-print
+### Example: Print out the Alphabet
+This example prints out characters 97-123 in the ASCII table as readable characters. 
+```asm   
+_main:
+    mov ra, 26          ; length of the alphabet
+    mov rb, 97          ; start position of ASCII table
+    mov rc, 0
+    alloc rd, 26
+_loop:
+    mov rd[rc], rb
+    add rc, 1
+    add rb, 1
+    test rc, ra
+    jl _loop
+_end:
+    call __println
+    free rd
 ```
 Output:
 ```
-stack size is: 5
-```
-### Heap allocation
-```asm
-push "My value I want on the heap"
-alloc $my_heap_var
-store $my_heap_var
-load $__stack_size
-print
-load $my_heap_var
-load $__stack_size
-print
-print
-```
-Output:
-```
-0
-1
-My value I want on the heap
+abcdefghijklmnopqrstuvwxyz
 ```

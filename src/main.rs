@@ -179,6 +179,9 @@ mod test {
     #[test]
     fn can_generate_random_string() {
         run(r#"
+        section .data
+            _chars: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            _len: 10
         section .code
             _main:
                 call _generate_password
@@ -208,10 +211,18 @@ mod test {
                 free ra                     ; free memory allocation at ra
                 ret
             _stop:                          ; end of program
-        section .data
-            _chars: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-            _len: 10
         "#
         .to_string());
+    }
+
+    #[test]
+    fn can_call_hello_world() {
+        run(r#"
+        mov ra, 10
+        mov rb, 20
+        mov rc, 31
+        add ra, rb
+        assert ra, rc
+        "#.to_string());
     }
 }

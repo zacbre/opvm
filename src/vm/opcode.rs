@@ -28,6 +28,7 @@ pub enum OpCode {
     Free,
     Load,
     Store,
+    Assert
 }
 
 impl From<&str> for OpCode {
@@ -60,6 +61,7 @@ impl From<&str> for OpCode {
             "free" => OpCode::Free,
             "load" => OpCode::Load,
             "store" => OpCode::Store,
+            "assert" => OpCode::Assert,
             _ => OpCode::Igl,
         }
     }
@@ -96,6 +98,7 @@ impl From<OpCode> for &str {
             OpCode::Free => "free",
             OpCode::Load => "load",
             OpCode::Store => "store",
+            OpCode::Assert => "assert",
         }
     }
 }

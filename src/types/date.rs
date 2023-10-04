@@ -10,6 +10,7 @@ impl Object for Date {
     }
 }
 impl Date {
+    #[allow(dead_code)]
     pub fn format(&self, fmt: &str) -> String {
         self.0.format(fmt).to_string()
     }

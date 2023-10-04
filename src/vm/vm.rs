@@ -39,6 +39,8 @@ impl Vm {
                 Box::new(builtin::DateNow),
                 Box::new(builtin::Dbg),
                 Box::new(builtin::DbgPtr),
+                Box::new(builtin::Random),
+                Box::new(builtin::MathFloor),
             ],
             instructions: vec![],
             labels: HashMap::new(),
@@ -207,7 +209,11 @@ impl Vm {
                         let result = self.jump_to_label(label, &self.labels)?;
                         self.pc = result;
                         continue;
-                    } else {
+                    } else if self
+                        .builtins
+                        .iter()
+                        .any(|b| b.get_name() == label.to_string())
+                    {
                         for func in &self.builtins {
                             if func.get_name() == label.to_string() {
                                 let result = func.call(
@@ -219,6 +225,11 @@ impl Vm {
                                 break;
                             }
                         }
+                    } else {
+                        self.error(
+                            format!("Cannot find label '{}' at {}!", label, self.pc),
+                            Some(vec![label]),
+                        )?;
                     }
                 }
                 OpCode::Ret => {
@@ -660,19 +671,20 @@ impl Vm {
             }
             Field(Type::String(s)) => {
                 let offset = field.to_u(&self)?;
-                Field::from(s[offset..offset].to_string())
+                Field::from(s[offset..offset + 1].to_string())
             }
             _ => {
-                return Err(self.error(
-                    format!(
-                        "Cannot use '{}' as offset at {}!",
-                        register_for_data, self.pc
-                    ),
-                    Some(vec![register_for_data.underlying_data_clone()]),
-                ).unwrap_err());
+                return Err(self
+                    .error(
+                        format!(
+                            "Cannot use '{}' as offset at {}!",
+                            register_for_data, self.pc
+                        ),
+                        Some(vec![register_for_data.underlying_data_clone()]),
+                    )
+                    .unwrap_err());
             }
         };
-
         Ok(result)
     }
 

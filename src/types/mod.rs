@@ -5,7 +5,7 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::vm::register::{Register, RegisterOffset, RegisterWithOffset};
+use crate::vm::register::{Register, RegisterWithOffset};
 
 pub mod date;
 pub mod duration;
@@ -59,7 +59,7 @@ macro_rules! add_types {
     ($left:expr, $right:expr, $($pat:pat => $result:expr),*) => {{
         match ($left, $right) {
             $($pat => $result,)*
-            _ => panic!("Invalid combination for addition"),
+            _ => panic!("Invalid combination for type..."),
         }
     }};
 }
@@ -116,7 +116,11 @@ impl Mul for Type {
             (Type::Float(f1), Type::Float(f2)) => Type::Float(f1 * f2),
             (Type::Char(c1), Type::Char(c2)) => Type::Int((c1 as i32 * c2 as i32).into()),
             (Type::UInt(u), Type::Int(i)) => Type::Int(u as i64 * i),
-            (Type::Int(i), Type::UInt(u)) => Type::Int(i * u as i64)
+            (Type::Int(i), Type::UInt(u)) => Type::Int(i * u as i64),
+            (Type::UInt(u), Type::Float(f1)) => Type::Float(u as f64 * f1),
+            (Type::Float(f1), Type::UInt(u)) => Type::Float(u as f64 * f1),
+            (Type::Int(u), Type::Float(f1)) => Type::Float(u as f64 * f1),
+            (Type::Float(f1), Type::Int(u)) => Type::Float(u as f64 * f1)
             // todo: add more combinations later
             //(Type::String(s1), Type::String(s2)) => Type::String(format!("{}{}", s1, s2)),
             //todo: (Type::Pointer(p1), Type::Pointer(p2)) => todo!(),

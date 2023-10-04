@@ -10,6 +10,7 @@ impl Object for Duration {
     }
 }
 impl Duration {
+    #[allow(dead_code)]
     pub fn new() -> Box<dyn Object> {
         Box::new(Duration(chrono::Duration::zero()))
     }

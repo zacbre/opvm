@@ -1,7 +1,5 @@
 #![feature(layout_for_ptr)]
 
-use vm::program::Program;
-
 use crate::lexer::lexer::Lexer;
 use crate::vm::vm::Vm;
 
@@ -150,5 +148,70 @@ mod test {
         let mut heap = crate::vm::heap::Heap::recover_poison(&vm.heap);
         let allocation = rb.to_p(&vm).unwrap();
         heap.deallocate(allocation.ptr, allocation.size).unwrap();
+    }
+
+    #[test]
+    fn can_mov_string_offset_within_loop() {
+        run(r#"
+        section .code
+            _main:
+                mov ra, _len
+                mov rb, _start
+                mov rc, 0
+                alloc rd, 26
+            _loop:
+                mov rd[rc], rb
+                add rc, 1
+                add rb, 1
+                test rc, ra
+                jl _loop
+            _end:
+                call __println
+                free rd
+
+        section .data
+            _start: 97
+            _len: 26
+        "#
+        .to_string());
+    }
+
+    #[test]
+    fn can_generate_random_string() {
+        run(r#"
+        section .code
+            _main:
+                call _generate_password
+                add r9, 1                   ; add 1 to r9 (amount of times password generated)
+                test r9, 5                  ; compare r9 to 5, set flags
+                jl _main                    ; if r9 < 5, jump back to _main
+                jmp _stop                   ; unconditionally jmp to _stop
+            _clamp_numbers:
+                call __random               ; generate a random between 0 and 1
+                mov r1, 62                  ; maximum number = 62
+                mul r0, r1                  ; multiply random number by 62
+                call __floor                 ; round down to nearest integer
+                ret
+            _generate_password:
+                alloc ra, _len              ; allocate _len bytes to ra
+                mov rb, _chars              ; copy _chars to rb
+                mov rc, 0                   ; copy 0 to rc
+                mov r5, _len                ; copy _len to r5
+            _loop:
+                call _clamp_numbers         ; r0 = return of _clamp_numbers
+                mov ra[rc], rb[r0]          ; copy rb[r0] offset (rb is a pointer to _chars
+                add rc, 1                   ; add 1 to rc
+                test rc, r5                 ; compare rc to r5, set flags
+                jl _loop                    ; if rc < r5, jump back to _loop
+                mov rd, ra                  ; copy ra to rd
+                call __println              ; print rd
+                free ra                     ; free memory allocation at ra
+                ret
+            _stop:                          ; end of program
+        section .data
+            _chars: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            _len: 10
+        "#
+        .to_string());
     }
 }

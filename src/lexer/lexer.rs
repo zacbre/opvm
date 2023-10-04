@@ -3,7 +3,7 @@ use crate::vm::field::Field;
 use crate::vm::instruction::Instruction;
 use crate::vm::program::Program;
 use crate::vm::register::{
-    self, Register, RegisterOffset, RegisterOffsetOperandType, RegisterWithOffset,
+    Register, RegisterOffset, RegisterOffsetOperandType, RegisterWithOffset,
 };
 use nom::branch::alt;
 use nom::bytes::complete::*;
@@ -592,6 +592,9 @@ mod test {
         println!("{:?}", unwrapped.instructions);
         assert_eq!(1, unwrapped.instructions.len());
         assert_eq!(2, unwrapped.instructions[0].operand.len());
-        assert_eq!(Field(Type::Char('a')), unwrapped.instructions[0].operand.pop().unwrap());
+        assert_eq!(
+            Field(Type::Char('a')),
+            unwrapped.instructions[0].operand.pop().unwrap()
+        );
     }
 }

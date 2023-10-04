@@ -69,6 +69,7 @@ impl Field {
         match self.0 {
             Type::UInt(u) => Ok(u),
             Type::Int(i) => Ok(i as usize),
+            Type::Float(f) => Ok(f as usize),
             _ => {
                 let err = arg.error(
                     format!("Value '{:?}' is not a number!", self.0),
@@ -211,13 +212,26 @@ impl Display for Field {
                 let vec = unsafe { std::slice::from_raw_parts(p.ptr.as_ptr(), p.size) };
 
                 // truncate every last 0?
-                write!(f, "{}", String::from_utf8_lossy(vec).trim_matches(char::from(0)))
-            },
+                write!(
+                    f,
+                    "{}",
+                    String::from_utf8_lossy(vec).trim_matches(char::from(0))
+                )
+            }
             Field(Type::Char(c)) => write!(f, "{}", c),
             Field(Type::String(ref s)) => write!(f, "{}", s),
             Field(Type::Register(r)) => write!(f, "{}", r),
             Field(Type::RegisterWithOffsets(r)) => {
-                write!(f, "{}[{}]", r.register, r.offsets.iter().map(|o| format!("{}{}", o.offset, o.operand.to_string())).collect::<Vec<String>>().join(""))
+                write!(
+                    f,
+                    "{}[{}]",
+                    r.register,
+                    r.offsets
+                        .iter()
+                        .map(|o| format!("{}{}", o.offset, o.operand.to_string()))
+                        .collect::<Vec<String>>()
+                        .join("")
+                )
             }
             Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
             //_ => write!(f, "{:?}", self),

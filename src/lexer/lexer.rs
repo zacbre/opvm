@@ -577,4 +577,21 @@ mod test {
             unwrapped.instructions[3].operand.pop().unwrap()
         );
     }
+
+    #[test]
+    fn can_assert_chars() {
+        let assm = r#"
+        section .code
+            _main:
+                mov ra[0], 'a'
+        "#;
+
+        let instructions = Lexer::new().process(assm.to_string());
+        assert!(instructions.is_some());
+        let mut unwrapped = instructions.unwrap();
+        println!("{:?}", unwrapped.instructions);
+        assert_eq!(1, unwrapped.instructions.len());
+        assert_eq!(2, unwrapped.instructions[0].operand.len());
+        assert_eq!(Field(Type::Char('a')), unwrapped.instructions[0].operand.pop().unwrap());
+    }
 }

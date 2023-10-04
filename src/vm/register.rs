@@ -49,6 +49,19 @@ pub struct RegisterOffset {
     pub operand: RegisterOffsetOperandType,
 }
 
+impl Display for RegisterOffsetOperandType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RegisterOffsetOperandType::None => write!(f, ""),
+            RegisterOffsetOperandType::Add => write!(f, "+"),
+            RegisterOffsetOperandType::Sub => write!(f, "-"),
+            RegisterOffsetOperandType::Mul => write!(f, "*"),
+            RegisterOffsetOperandType::Div => write!(f, "/"),
+            RegisterOffsetOperandType::Rem => write!(f, "%"),
+        }
+    }
+}
+
 impl Clone for RegisterWithOffset {
     fn clone(&self) -> Self {
         Self {

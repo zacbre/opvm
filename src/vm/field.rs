@@ -98,6 +98,9 @@ impl Field {
             Type::Int(b) => Ok(b.to_ne_bytes().to_vec()),
             Type::UInt(b) => Ok(b.to_ne_bytes().to_vec()),
             Type::String(b) => Ok(b.as_bytes().to_vec()),
+            Type::Char(c) => Ok(c.to_string().as_bytes().to_vec()),
+            Type::Short(s) => Ok(s.to_ne_bytes().to_vec()),
+            Type::Float(f) => Ok(f.to_ne_bytes().to_vec()),
             _ => {
                 let err = arg.error(
                     "Value is not a pointer!".to_string(),
@@ -202,12 +205,19 @@ impl Display for Field {
             Field(Type::Bool(b)) => write!(f, "{}", b),
             Field(Type::Int(i)) => write!(f, "{}", i),
             Field(Type::UInt(u)) => write!(f, "{}", u),
-            Field(Type::Pointer(p)) => write!(f, "{:?}", p),
+            Field(Type::Pointer(p)) => {
+                //write!(f, "{:p}", p)
+                // let's try printing out the pointer's data?
+                let vec = unsafe { std::slice::from_raw_parts(p.ptr.as_ptr(), p.size) };
+
+                // truncate every last 0?
+                write!(f, "{}", String::from_utf8_lossy(vec).trim_matches(char::from(0)))
+            },
             Field(Type::Char(c)) => write!(f, "{}", c),
             Field(Type::String(ref s)) => write!(f, "{}", s),
-            Field(Type::Register(r)) => write!(f, "{:?}", r),
+            Field(Type::Register(r)) => write!(f, "{}", r),
             Field(Type::RegisterWithOffsets(r)) => {
-                write!(f, "{:?}", r)
+                write!(f, "{}[{}]", r.register, r.offsets.iter().map(|o| format!("{}{}", o.offset, o.operand.to_string())).collect::<Vec<String>>().join(""))
             }
             Field(Type::Object(ref o)) => write!(f, "{}", (*o).to_string()),
             //_ => write!(f, "{:?}", self),

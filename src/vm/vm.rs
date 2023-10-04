@@ -111,6 +111,7 @@ impl Vm {
                             }
                             Field(Type::RegisterWithOffsets(r2)) => {
                                 let source_data = self.get_source_data(r2)?;
+                                println!("source_data: {:?}", source_data);
                                 self.registers.set(r, source_data);
                             }
                             _ => self.registers.set(r, data),
@@ -620,12 +621,13 @@ impl Vm {
         Ok(())
     }
 
-    fn get_source_data(&mut self, source: &RegisterWithOffset) -> Result<Field, Error> {
+    fn get_source(&mut self, source: &RegisterWithOffset) -> Result<Field, Error> {
         let mut field = Field::default();
         let mut previous_operand = RegisterOffsetOperandType::None;
         for item in &source.offsets {
             match item.offset {
                 Field(Type::Int(_)) => {
+                    // get the offset at specified index.
                     previous_operand.apply(&mut field, item.offset.underlying_data_clone());
                 }
                 Field(Type::Register(rv)) => {
@@ -647,18 +649,40 @@ impl Vm {
         Ok(field)
     }
 
-    fn set_dest_data(&mut self, dest: &RegisterWithOffset, data: Field) -> Result<(), Error> {
-        let offset = self.get_source_data(dest)?;
+    fn get_source_data(&mut self, source: &RegisterWithOffset) -> Result<Field, Error> {
+        let field = self.get_source(source)?;
+        // once the offsets have been calculated, let's pull the original item and do something with it
+        let register_for_data = self.registers.get(source.register);
+        let result = match register_for_data {
+            Field(Type::Pointer(p)) => {
+                let value = unsafe { p.ptr.as_ptr().offset(field.to_u(&self)? as isize) };
+                Field::from(unsafe { value.read() })
+            }
+            Field(Type::String(s)) => {
+                let offset = field.to_u(&self)?;
+                Field::from(s[offset..offset].to_string())
+            }
+            _ => {
+                return Err(self.error(
+                    format!(
+                        "Cannot use '{}' as offset at {}!",
+                        register_for_data, self.pc
+                    ),
+                    Some(vec![register_for_data.underlying_data_clone()]),
+                ).unwrap_err());
+            }
+        };
 
+        Ok(result)
+    }
+
+    fn set_dest_data(&mut self, dest: &RegisterWithOffset, data: Field) -> Result<(), Error> {
+        let offset = self.get_source(dest)?;
         let register_for_data = self.registers.get(dest.register);
         match register_for_data {
             Field(Type::Pointer(p)) => {
-                println!("Offset: {:?}", offset);
-                println!("Pointer: {:p}", p.ptr.as_ptr());
                 let value = unsafe { p.ptr.as_ptr().offset(offset.to_u(&self)? as isize) };
-                println!("Value: {:p}", value);
                 let mut bytes = data.to_b(&self)?;
-                println!("Bytes: {:?}", bytes);
                 unsafe {
                     let bytes_ptr = bytes.as_mut_ptr();
                     bytes_ptr.copy_to_nonoverlapping(value, bytes.len());
@@ -668,7 +692,7 @@ impl Vm {
             Field(Type::String(s)) => {
                 let offset = offset.to_u(&self)?;
                 let new_string = data.to_string();
-                let new_value = if new_string.len() < offset + new_string.len() {
+                let new_value = if s.len() < offset + new_string.len() {
                     format!("{}{}", &s[offset..], new_string)
                 } else {
                     format!(

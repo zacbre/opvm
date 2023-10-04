@@ -108,21 +108,47 @@ mod test {
     }
 
     #[test]
-    fn assign_to_pointer() {
+    fn can_assign_to_pointer() {
         let vm = run(r#"
-        section .code
-            _main:
-                alloc ra, 10
-                call __dbg_heap
-                mov ra[2], 5
-                call __dbg_heap
-                mov r3, ra[2]
-                call __dbg_print
-                call __dbg_heap
-                free ra
-        section .data
+            alloc ra, 10
+            mov ra[0], 'y'
+            mov ra[1], 'e'
+            mov ra[2], 'y'
+            ;free ra
+            mov rd, ra
+            call __println
         "#
         .to_string());
-        let r0 = vm.registers.r1;
+
+        let ra = &vm.registers.ra;
+        assert_eq!("yey", ra.to_string());
+        // let's free the pointer?
+        let mut heap = crate::vm::heap::Heap::recover_poison(&vm.heap);
+        let allocation = ra.to_p(&vm).unwrap();
+        heap.deallocate(allocation.ptr, allocation.size).unwrap();
+    }
+
+    #[test]
+    fn can_move_from_pointer_to_pointer() {
+        let vm = run(r#"
+            alloc ra, 4
+            mov ra[0], 'd'
+            mov ra[1], 'a'
+            mov ra[2], 'y'
+            alloc rb, 4
+            mov rb[0], ra[0]
+            mov rb[1], ra[1]
+            mov rb[2], ra[2]
+            mov rd, rb
+            call __println
+        "#
+        .to_string());
+
+        let rb = &vm.registers.rb;
+        assert_eq!("day", rb.to_string());
+        // let's free the pointer?
+        let mut heap = crate::vm::heap::Heap::recover_poison(&vm.heap);
+        let allocation = rb.to_p(&vm).unwrap();
+        heap.deallocate(allocation.ptr, allocation.size).unwrap();
     }
 }

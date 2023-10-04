@@ -6,6 +6,6 @@ pub mod vm;
 
 mod builtin;
 mod error;
-mod heap;
+pub(crate) mod heap;
 mod opcode;
 mod stack;

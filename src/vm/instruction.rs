@@ -85,7 +85,11 @@ impl Instruction {
         let operands = self.operand.to_vec();
         for i in 0..operands.len() {
             let item = &operands[i];
-            final_string.push_str(" ");
+            if i != 0 {
+                final_string.push_str(", ");
+            } else {
+                final_string.push_str(" ");
+            }
             final_string.push_str(item.to_string().as_str());
         }
         final_string
